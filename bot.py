@@ -216,9 +216,9 @@ TEXTS = {
         'done_btn': "💵 Завершити",
         'client_notif_courier_at_a': "🔔 Кур'єр прибув на точку А! Будь ласка, виходьте.",
         'client_notif_courier_at_b': "🔔 Кур'єр на місці призначення (Точка Б)! Заберіть посилку.",
-        'cant_cancel': "⚠️ Не можна скасувати замовлення після того, як кур'єр його прийняв.",
+        'cant_cancel': "⚠️ Не можна скасувати замовлення після того, как кур'єр його прийняв.",
         'order_cancelled': "🗑 Замовлення успішно скасовано.",
-        'invalid_geo': "⚠️ Будь ласка, використовуйте только кнопку «📍 Надішліть геопозицію» 👇",
+        'invalid_geo': "⚠️ Будь ласка, використовуйте тільки кнопку «📍 Надішліть геопозицію» 👇",
         'support_req': "📝 Напишіть ваше звернення до підтримки одним повідомленням. Адміністратор відповість вам тут:",
         'support_sent': "⏳ Ваш запит відправлено до техпідтримки. Очікуйте на відповідь.",
         'support_reply_header': "🔔 **Відповідь від техпідтримки:**\n\n",
@@ -422,7 +422,7 @@ async def cmd_courier_history(message: Message):
     else:
         for o in recent_orders:
             date_str = o['created_at'].strftime('%d.%m %H:%M')
-            c_type = "📦 Стандарт" if o['cargo_type'] == 'standard' else "🚚 Грузовой"
+            c_type = "📦 Стандарт" if o['cargo_type'] == 'standard' else "🚚 Вантажний"
             o_price = round(float(o['price']), 2)
             text += f"🔹 **Заказ #{o['id']}** | {date_str} | {c_type} | `{o_price:.2f} MDL`\n"
             
@@ -961,6 +961,7 @@ async def handle_admin_panel(request):
             background: #090b0d;
             border: 1px solid var(--border-color);
             border-radius: 10px;
+            padding: 12px 166px; /* corrected padding */
             padding: 12px 16px;
             color: var(--text-color);
             font-size: 14px;
@@ -1324,16 +1325,15 @@ async def handle_admin_panel(request):
 </body>
 </html>"""
     
-    html_filled = html_template.format(
-        current_version=config.get("latest_version", "2.1.4"),
-        message_ru=config.get("update_message_ru", ""),
-        message_ro=config.get("update_message_ro", ""),
-        message_en=config.get("update_message_en", ""),
-        features_raw=features_raw,
-        force_checked=force_checked,
-        apk_size=apk_size,
-        apk_date=apk_date
-    )
+    html_filled = (html_template
+        .replace("{current_version}", config.get("latest_version", "2.1.4"))
+        .replace("{message_ru}", config.get("update_message_ru", ""))
+        .replace("{message_ro}", config.get("update_message_ro", ""))
+        .replace("{message_en}", config.get("update_message_en", ""))
+        .replace("{features_raw}", features_raw)
+        .replace("{force_checked}", force_checked)
+        .replace("{apk_size}", apk_size)
+        .replace("{apk_date}", apk_date))
     
     return web.Response(text=html_filled, content_type="text/html")
 
