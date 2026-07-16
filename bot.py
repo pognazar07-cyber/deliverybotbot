@@ -87,7 +87,7 @@ TEXTS = {
         'no_orders': "📭 На данный момент нет свободных заказов.",
         'take_btn': "✅ Принять заказ за {price} MDL",
         'cancel_btn': "❌ Отказаться",
-        'order_taken': "🤝 Вы приняли заказ! Двигайтесь на точку А.\nℹ️ Инфо:\n📞 Отправитель: {p_send}\n📞 Получатель: {p_recv}\n💬 Комм: {comm}\n🗺 Маршрут Google Maps: {url}",
+        'order_taken': "🤝 Вы приняли заказ! Двигайтесь на точку А.\nℹ️ Инфо:\n📞 Отправитель: {p_send}\n📞 Получатель: {p_recv}\n💬 Комм: {comm}\n🗺 Маршрут OpenStreetMap: {url}",
         'at_a_btn': "📍 Я на точке А",
         'at_b_btn': "🏁 Я на месте (Точка Б)",
         'done_btn': "💵 Завершить",
@@ -128,7 +128,7 @@ TEXTS = {
         'no_orders': "📭 În prezent nu există comenzi disponibile.",
         'take_btn': "✅ Acceptă comanda pentru {price} MDL",
         'cancel_btn': "❌ Refuză",
-        'order_taken': "🤝 Ați acceptat comanda! Deplasați-vă la punctul A.\nℹ️ Info:\n📞 Expeditor: {p_send}\n📞 Receptor: {p_recv}\n💬 Comm: {comm}\n🗺 Rută Google Maps: {url}",
+        'order_taken': "🤝 Ați acceptat comanda! Deplasați-vă la punctul A.\nℹ️ Info:\n📞 Expeditor: {p_send}\n📞 Receptor: {p_recv}\n💬 Comm: {comm}\n🗺 Rută OpenStreetMap: {url}",
         'at_a_btn': "📍 Sunt la punctul A",
         'at_b_btn': "🏁 Sunt la destinație (Punctul B)",
         'done_btn': "💵 Finalizează",
@@ -169,7 +169,7 @@ TEXTS = {
         'no_orders': "📭 No available orders at the moment.",
         'take_btn': "✅ Accept order for {price} MDL",
         'cancel_btn': "❌ Decline",
-        'order_taken': "🤝 You accepted the order! Proceed to point A.\nℹ️ Info:\n📞 Sender: {p_send}\n📞 Receiver: {p_recv}\n💬 Comment: {comm}\n🗺 Google Maps Route: {url}",
+        'order_taken': "🤝 You accepted the order! Proceed to point A.\nℹ️ Info:\n📞 Sender: {p_send}\n📞 Receiver: {p_recv}\n💬 Comment: {comm}\n🗺 OpenStreetMap Route: {url}",
         'at_a_btn': "📍 I am at point A",
         'at_b_btn': "🏁 I am at destination (Point B)",
         'done_btn': "💵 Complete",
@@ -210,7 +210,7 @@ TEXTS = {
         'no_orders': "📭 На даний момент немає вільних замовлень.",
         'take_btn': "✅ Прийняти замовлення за {price} MDL",
         'cancel_btn': "❌ Відмовитися",
-        'order_taken': "🤝 Ви прийняли замовлення! Рухайтесь на точку А.\nℹ️ Інфо:\n📞 Відправник: {p_send}\n📞 Отримувач: {p_recv}\n💬 Коментар: {comm}\n🗺 Маршрут Google Maps: {url}",
+        'order_taken': "🤝 Ви прийняли замовлення! Рухайтесь на точку А.\nℹ️ Інфо:\n📞 Відправник: {p_send}\n📞 Отримувач: {p_recv}\n💬 Коментар: {comm}\n🗺 Маршрут OpenStreetMap: {url}",
         'at_a_btn': "📍 Я на точці А",
         'at_b_btn': "🏁 Я на місці (Точка Б)",
         'done_btn': "💵 Завершити",
@@ -218,7 +218,7 @@ TEXTS = {
         'client_notif_courier_at_b': "🔔 Кур'єр на місці призначення (Точка Б)! Заберіть посилку.",
         'cant_cancel': "⚠️ Не можна скасувати замовлення після того, як кур'єр його прийняв.",
         'order_cancelled': "🗑 Замовлення успішно скасовано.",
-        'invalid_geo': "⚠️ Будь ласка, використовуйте тільки кнопку «📍 Надішліть геопозицію» 👇",
+        'invalid_geo': "⚠️ Будь ласка, використовуйте только кнопку «📍 Надішліть геопозицію» 👇",
         'support_req': "📝 Напишіть ваше звернення до підтримки одним повідомленням. Адміністратор відповість вам тут:",
         'support_sent': "⏳ Ваш запит відправлено до техпідтримки. Очікуйте на відповідь.",
         'support_reply_header': "🔔 **Відповідь від техпідтримки:**\n\n",
@@ -251,7 +251,7 @@ TEXTS = {
         'no_orders': "📭 Momentan nu sunt comenzi disponibile.",
         'take_btn': "✅ Acceptă comanda pentru {price} MDL",
         'cancel_btn': "❌ Refuză",
-        'order_taken': "🤝 Ați acceptat comanda! Mergi la punctul A.\nℹ️ Info:\n📞 Expeditor: {p_send}\n📞 Receptor: {p_recv}\n💬 Comm: {comm}\n🗺 Traseu Google Maps: {url}",
+        'order_taken': "🤝 Ați acceptat comanda! Mergi la punctul A.\nℹ️ Info:\n📞 Expeditor: {p_send}\n📞 Receptor: {p_recv}\n💬 Comm: {comm}\n🗺 Traseu OpenStreetMap: {url}",
         'at_a_btn': "📍 Sunt la punctul A",
         'at_b_btn': "🏁 Sunt la destinație (Punctul B)",
         'done_btn': "💵 Finalizează",
@@ -705,10 +705,10 @@ async def process_admin_reply_send(message: Message, state: FSMContext):
         
     await state.clear()
 
-# --- РАСЧЕТ МАРШРУТА GOOGLE MAPS & OSRM ---
+# --- РАСЧЕТ МАРШРУТА OPENSTREETMAP & OSRM ---
 async def get_osrm_data(lat1, lon1, lat2, lon2):
-    # Google Maps URL for driving route
-    map_url = f"https://www.google.com/maps/dir/?api=1&origin={lat1},{lon1}&destination={lat2},{lon2}&travelmode=driving"
+    # OpenStreetMap URL for driving route using OSRM engine
+    map_url = f"https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route={lat1},{lon1};{lat2},{lon2}"
     osrm_api = (
         f"https://router.project-osrm.org/route/v1/driving/"
         f"{lon1},{lat1};{lon2},{lat2}"
