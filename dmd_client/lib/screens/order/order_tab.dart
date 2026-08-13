@@ -1,3 +1,4 @@
+import 'package:dmd_design/dmd_design.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/strings.dart';
@@ -95,18 +96,17 @@ class _OrderTabState extends State<OrderTab> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(DmdSpace.xl),
           children: [
-            const SizedBox(height: 80),
-            Icon(Icons.local_shipping_outlined, size: 72, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 16),
-            Center(child: Text(s.noActiveOrder, textAlign: TextAlign.center)),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _createOrder,
-              icon: const Icon(Icons.add),
-              label: Text(s.newOrder),
-              style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
+            const SizedBox(height: 60),
+            DmdEmptyState(
+              icon: Icons.local_shipping_outlined,
+              message: s.noActiveOrder,
+              action: FilledButton.icon(
+                onPressed: _createOrder,
+                icon: const Icon(Icons.add),
+                label: Text(s.newOrder),
+              ),
             ),
           ],
         ),

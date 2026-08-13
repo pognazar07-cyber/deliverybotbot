@@ -1,3 +1,4 @@
+import 'package:dmd_design/dmd_design.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/strings.dart';
@@ -86,7 +87,7 @@ class _SupportScreenState extends State<SupportScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _tickets.isEmpty
-                    ? Center(child: Text(s.supportEmpty))
+                    ? DmdEmptyState(icon: Icons.support_agent, message: s.supportEmpty)
                     : RefreshIndicator(
                         onRefresh: _load,
                         child: ListView.builder(

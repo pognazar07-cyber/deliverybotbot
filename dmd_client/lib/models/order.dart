@@ -1,3 +1,5 @@
+import 'package:dmd_design/dmd_design.dart';
+
 /// Mirrors the order DTO returned by the bot's REST API
 /// (handle_get_active_order_api / handle_get_order_history_api in bot.py).
 class DeliveryOrder {
@@ -59,6 +61,14 @@ class DeliveryOrder {
       status == 'pending' || status == 'accepted' || status == 'at_a' || status == 'at_b';
 
   bool get isCancellable => status == 'pending';
+
+  DmdStatusKind get statusKind => switch (status) {
+        'pending' => DmdStatusKind.pending,
+        'accepted' || 'at_a' || 'at_b' => DmdStatusKind.inProgress,
+        'completed' => DmdStatusKind.success,
+        'cancelled' => DmdStatusKind.danger,
+        _ => DmdStatusKind.pending,
+      };
 }
 
 /// Mirrors a support_tickets row returned by handle_get_support_tickets_api.

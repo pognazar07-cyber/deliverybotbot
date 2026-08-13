@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dmd_design/dmd_design.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -128,7 +129,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Chip(label: Text(s.statusLabel(_order.status))),
+                  DmdStatusChip(label: s.statusLabel(_order.status), kind: _order.statusKind),
                   const SizedBox(height: 8),
                   Text('#${_order.id} · ${_order.price.toStringAsFixed(2)} MDL',
                       style: Theme.of(context).textTheme.titleMedium),

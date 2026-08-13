@@ -1,3 +1,4 @@
+import 'package:dmd_design/dmd_design.dart';
 import 'package:flutter/material.dart';
 
 import 'screens/splash_screen.dart';
@@ -14,10 +15,9 @@ class DmdApp extends StatelessWidget {
     return MaterialApp(
       title: 'DeliveryMD',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF2563EB),
-        useMaterial3: true,
-      ),
+      theme: DmdTheme.light(DmdBrand.clientSeed),
+      darkTheme: DmdTheme.dark(DmdBrand.clientSeed),
+      themeMode: ThemeMode.system,
       home: const SplashScreen(),
     );
   }

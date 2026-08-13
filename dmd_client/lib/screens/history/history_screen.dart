@@ -1,3 +1,4 @@
+import 'package:dmd_design/dmd_design.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/strings.dart';
@@ -45,8 +46,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
             if (snapshot.hasError) {
               return ListView(
                 children: [
-                  const SizedBox(height: 120),
-                  Center(child: Text('${snapshot.error}')),
+                  const SizedBox(height: 60),
+                  DmdEmptyState(icon: Icons.error_outline, message: '${snapshot.error}'),
                 ],
               );
             }
@@ -54,15 +55,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
             if (orders.isEmpty) {
               return ListView(
                 children: [
-                  const SizedBox(height: 120),
-                  Center(child: Text(s.historyEmpty)),
+                  const SizedBox(height: 60),
+                  DmdEmptyState(icon: Icons.receipt_long_outlined, message: s.historyEmpty),
                 ],
               );
             }
             return ListView.separated(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(DmdSpace.md),
               itemCount: orders.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: DmdSpace.sm),
               itemBuilder: (context, i) {
                 final o = orders[i];
                 final isFreight = o.cargoType == 'freight';
@@ -70,8 +71,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   child: ListTile(
                     leading: Icon(isFreight ? Icons.local_shipping : Icons.inventory_2_outlined),
                     title: Text('#${o.id} · ${o.price.toStringAsFixed(2)} MDL'),
-                    subtitle: Text(s.statusLabel(o.status)),
-                    trailing: isFreight ? const Text('🚚') : const Text('📦'),
+                    trailing: DmdStatusChip(label: s.statusLabel(o.status), kind: o.statusKind),
                   ),
                 );
               },
