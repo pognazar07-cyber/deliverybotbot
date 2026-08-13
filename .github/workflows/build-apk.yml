@@ -51,3 +51,41 @@ jobs:
           name: ${{ matrix.app }}-release-apk
           path: ${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+  publish-apks:
+    name: Commit APKs into dmdapk/
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dmd_client-release-apk
+          path: _dl/dmd_client
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dmd_pro_courier-release-apk
+          path: _dl/dmd_pro_courier
+
+      - name: Move APKs into dmdapk/
+        run: |
+          mkdir -p dmdapk
+          cp _dl/dmd_client/app-release.apk dmdapk/dmd_client.apk
+          cp _dl/dmd_pro_courier/app-release.apk dmdapk/dmd_pro_courier.apk
+          rm -rf _dl
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dmdapk/dmd_client.apk dmdapk/dmd_pro_courier.apk
+          if git diff --cached --quiet; then
+            echo "APKs unchanged, nothing to commit"
+          else
+            git commit -m "Update built APKs in dmdapk/ [skip ci]"
+            git push
+          fi
