@@ -40,8 +40,6 @@ active_afk_tasks = {}
 
 # --- СОСТОЯНИЯ FSM ---
 class UserReg(StatesGroup):
-    lang = State()
-    role = State()
     photo = State()
 
 class CreateOrder(StatesGroup):
@@ -63,9 +61,6 @@ class AdminReplyStates(StatesGroup):
 TEXTS = {
     'ru': {
         'start': "🌍 Выберите язык / Alegeți limba / Choose language / Оберіть мову:",
-        'select_role': "👤 Выберите вашу роль в системе:",
-        'client': "👨‍💼 Client",
-        'courier': "🛵 Courier",
         'send_photo': "📸 Отправьте ваше фото (селфи или паспорт) для верификации администратором:",
         'wait_admin': "⏳ Ваша заявка отправлена. Ожидайте одобрения администратором.",
         'approved': "🎉 Вы успешно одобрены! Наберите /online для начала работы.",
@@ -100,13 +95,10 @@ TEXTS = {
         'support_sent': "⏳ Ваш запрос отправлен в техподдержку. Ожидайте ответа.",
         'support_reply_header': "🔔 **Ответ от техподдержки:**\n\n",
         'history_empty': "📭 У вас еще нет выполненных заказов.",
-        'history_title': "📊 **ВАША СТАТИСТИКА И ИСТОРИЯ**\n\n💰 Заработок за этот месяц: `{earnings} MDL`\n📦 Выполнено заказов в этом месяце: `{count}`\n\n📜 **Последние 10 поездок:**\n"
+        'history_title': "📊 **ВАША СТАТИСТИКА И ИСТОРИЯ**\n\n💰 Заработок за этот месяц: `{earnings} MDL`\n📦 Выполнено заказов в этом месяце: `{count}`\n\n📜 **Последние 10 поездок:**\n",
     },
     'ro': {
         'start': "🌍 Alegeți limba / Выберите язык / Choose language / Оберіть мову:",
-        'select_role': "👤 Alegeți rolul dvs. în sistem:",
-        'client': "👨‍💼 Client",
-        'courier': "🛵 Curier",
         'send_photo': "📸 Trimiteți o fotografie pentru verificare de către administrator:",
         'wait_admin': "⏳ Cererea dvs. a fost trimisă. Așteptați aprobarea administratorului.",
         'approved': "🎉 Ați fost aprobat cu succes! Tastați /online pentru a începe lucrul.",
@@ -141,13 +133,10 @@ TEXTS = {
         'support_sent': "⏳ Solicitarea a fost trimisă. Așteptați răspunsul.",
         'support_reply_header': "🔔 **Răspuns de la suport:**\n\n",
         'history_empty': "📭 Nu aveți comenzi finalizate.",
-        'history_title': "📊 **STATISTICI ȘI ISTORIC**\n\n💰 Câștiguri în această lună: `{earnings} MDL`\n📦 Comenzi finalizate în această lună: `{count}`\n\n📜 **Ultimele 10 livrări:**\n"
+        'history_title': "📊 **STATISTICI ȘI ISTORIC**\n\n💰 Câștiguri în această lună: `{earnings} MDL`\n📦 Comenzi finalizate în această lună: `{count}`\n\n📜 **Ultimele 10 livrări:**\n",
     },
     'en': {
         'start': "🌍 Choose language / Выберите язык / Alegeți limba / Оберіть мову:",
-        'select_role': "👤 Select your role in the system:",
-        'client': "👨‍💼 Client",
-        'courier': "🛵 Courier",
         'send_photo': "📸 Please send your photo for admin verification:",
         'wait_admin': "⏳ Your application has been sent. Waiting for admin approval.",
         'approved': "🎉 You have been successfully approved! Type /online to start working.",
@@ -182,13 +171,10 @@ TEXTS = {
         'support_sent': "⏳ Your request has been sent to support. Please wait for a response.",
         'support_reply_header': "🔔 **Response from Support:**\n\n",
         'history_empty': "📭 You don't have completed orders yet.",
-        'history_title': "📊 **YOUR STATS & HISTORY**\n\n💰 Earnings this month: `{earnings} MDL`\n📦 Orders completed this month: `{count}`\n\n📜 **Last 10 trips:**\n"
+        'history_title': "📊 **YOUR STATS & HISTORY**\n\n💰 Earnings this month: `{earnings} MDL`\n📦 Orders completed this month: `{count}`\n\n📜 **Last 10 trips:**\n",
     },
     'uk': {
         'start': "🌍 Оберіть мову / Выберите язык / Alegeți limba / Choose language:",
-        'select_role': "👤 Оберіть вашу роль у системі:",
-        'client': "👨‍💼 Клієнт",
-        'courier': "🛵 Кур'єр",
         'send_photo': "📸 Надішліть ваше фото (селфі або паспорт) для верифікації адміністратором:",
         'wait_admin': "⏳ Ваша заявка відправлена. Очікуйте схвалення адміністратором.",
         'approved': "🎉 Вас успішно схвалено! Введіть /online для початку роботи.",
@@ -223,13 +209,10 @@ TEXTS = {
         'support_sent': "⏳ Ваш запит відправлено до техпідтримки. Очікуйте на відповідь.",
         'support_reply_header': "🔔 **Відповідь від техпідтримки:**\n\n",
         'history_empty': "📭 У вас ще немає виконаних замовлень.",
-        'history_title': "📊 **ВАША СТАТИСТИКА ТА ІСТОРІЯ**\n\n💰 Заробіток за цей місяць: `{earnings} MDL`\n📦 Виконано замовлень у цьому місяці: `{count}`\n\n📜 **Останні 10 поїздок:**\n"
+        'history_title': "📊 **ВАША СТАТИСТИКА ТА ІСТОРІЯ**\n\n💰 Заробіток за цей місяць: `{earnings} MDL`\n📦 Виконано замовлень у цьому місяці: `{count}`\n\n📜 **Останні 10 поїздок:**\n",
     },
     'mo': {
         'start': "🌍 Alegeți limba / Выберите язык / Choose language / Оберіть мову:",
-        'select_role': "👤 Selectați rolul în sistem:",
-        'client': "👨‍💼 Client",
-        'courier': "🛵 Curier",
         'send_photo': "📸 Trimiteți o fotografie pentru verificare de către administrator:",
         'wait_admin': "⏳ Solicitarea dvs. a fost trimisă. Așteptați aprobarea administratorului.",
         'approved': "🎉 Ați fost aprobat cu succes! Introduceți /online pentru a începe lucrul.",
@@ -264,7 +247,7 @@ TEXTS = {
         'support_sent': "⏳ Solicitarea a fost trimisă. Așteptați răspunsul.",
         'support_reply_header': "🔔 **Răspuns de la suport:**\n\n",
         'history_empty': "📭 Nu aveți comenzi finalizate.",
-        'history_title': "📊 **STATISTICI ȘI ISTORIC**\n\n💰 Venit în această lună: `{earnings} MDL`\n📦 Comenzi finalizate: `{count}`\n\n📜 **Ultimele 10 livrări:**\n"
+        'history_title': "📊 **STATISTICI ȘI ISTORIC**\n\n💰 Venit în această lună: `{earnings} MDL`\n📦 Comenzi finalizate: `{count}`\n\n📜 **Ultimele 10 livrări:**\n",
     }
 }
 
@@ -389,34 +372,34 @@ async def cmd_cancel_anywhere(message: Message, state: FSMContext):
 @router.message(Command("history"))
 async def cmd_courier_history(message: Message):
     lang = await get_lang(message.from_user.id)
-    
+
     async with db_pool.acquire() as conn:
         user = await conn.fetchrow("SELECT role, is_approved FROM users WHERE user_id = $1", message.from_user.id)
         if not user or user['role'] != 'courier' or not user['is_approved']:
             await message.answer(TEXTS[lang]['not_approved'])
             return
-        
+
         stats = await conn.fetchrow("""
-            SELECT COALESCE(SUM(price), 0) AS total_earnings, COUNT(*) AS total_count 
-            FROM orders 
-            WHERE courier_id = $1 
-              AND status = 'completed' 
+            SELECT COALESCE(SUM(price), 0) AS total_earnings, COUNT(*) AS total_count
+            FROM orders
+            WHERE courier_id = $1
+              AND status = 'completed'
               AND created_at >= date_trunc('month', CURRENT_TIMESTAMP)
         """, message.from_user.id)
-        
+
         recent_orders = await conn.fetch("""
-            SELECT id, cargo_type, price, created_at 
-            FROM orders 
-            WHERE courier_id = $1 AND status = 'completed' 
-            ORDER BY created_at DESC 
+            SELECT id, cargo_type, price, created_at
+            FROM orders
+            WHERE courier_id = $1 AND status = 'completed'
+            ORDER BY created_at DESC
             LIMIT 10
         """, message.from_user.id)
-        
+
     earnings = round(float(stats['total_earnings']), 2)
     count = stats['total_count']
-    
+
     text = TEXTS[lang]['history_title'].format(earnings=f"{earnings:.2f}", count=count)
-    
+
     if not recent_orders:
         text += f"_{TEXTS[lang]['history_empty']}_"
     else:
@@ -425,7 +408,7 @@ async def cmd_courier_history(message: Message):
             c_type = "📦 Стандарт" if o['cargo_type'] == 'standard' else "🚚 Вантажний"
             o_price = round(float(o['price']), 2)
             text += f"🔹 **Заказ #{o['id']}** | {date_str} | {c_type} | `{o_price:.2f} MDL`\n"
-            
+
     await message.answer(text, parse_mode="Markdown")
 
 # --- КОМАНДА ДЛЯ АВТОРИЗАЦИИ / ПРИВЯЗКИ ПРИЛОЖЕНИЯ (/verify) ---
@@ -1802,37 +1785,29 @@ async def process_lang(callback: CallbackQuery, state: FSMContext):
     
     async with db_pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO users (user_id, lang, username) VALUES ($1, $2, $3)
+            INSERT INTO users (user_id, role, lang, username) VALUES ($1, 'client', $2, $3)
             ON CONFLICT (user_id) DO UPDATE SET lang = $2, username = $3
         """, callback.from_user.id, lang, callback.from_user.username)
-        
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=TEXTS[lang].get('client', 'Client'), callback_data="setrole_client")],
-        [InlineKeyboardButton(text=TEXTS[lang].get('courier', 'Courier'), callback_data="setrole_courier")]
-    ])
-    await callback.message.edit_text(TEXTS[lang]['select_role'], reply_markup=kb)
 
-@router.callback_query(F.data.startswith("setrole_"))
-async def process_role(callback: CallbackQuery, state: FSMContext):
-    role = callback.data.split("_")[1]
-    data = await state.get_data()
-    lang = data.get('lang', 'ru')
-    
+    await callback.message.edit_text(TEXTS[lang]['client_menu'])
+    await state.clear()
+
+# --- РЕГИСТРАЦИЯ КУРЬЕРА (скрытая команда, не в основном меню /start) ---
+@router.message(Command("courier"))
+async def cmd_become_courier(message: Message, state: FSMContext):
+    lang = await get_lang(message.from_user.id)
+
     async with db_pool.acquire() as conn:
-        whitelisted = await conn.fetchrow("SELECT user_id FROM whitelist WHERE user_id = $1", callback.from_user.id)
+        whitelisted = await conn.fetchrow("SELECT user_id FROM whitelist WHERE user_id = $1", message.from_user.id)
         is_approved = True if whitelisted else False
-        await conn.execute("UPDATE users SET role = $1, is_approved = $2 WHERE user_id = $3", role, is_approved, callback.from_user.id)
-    
-    if role == "courier":
-        if is_approved:
-            await callback.message.edit_text(TEXTS[lang]['approved'])
-            await callback.message.answer(TEXTS[lang]['courier_menu'])
-        else:
-            await callback.message.edit_text(TEXTS[lang]['send_photo'])
-            await state.set_state(UserReg.photo)
+        await conn.execute("UPDATE users SET role = 'courier', is_approved = $1 WHERE user_id = $2", is_approved, message.from_user.id)
+
+    if is_approved:
+        await message.answer(TEXTS[lang]['approved'])
+        await message.answer(TEXTS[lang]['courier_menu'])
     else:
-        await callback.message.edit_text(TEXTS[lang]['client_menu'])
-        await state.clear()
+        await message.answer(TEXTS[lang]['send_photo'])
+        await state.set_state(UserReg.photo)
 
 @router.message(UserReg.photo, F.photo)
 async def courier_photo_reg(message: Message, state: FSMContext):
@@ -2089,11 +2064,11 @@ async def cmd_view_active_orders(message: Message):
             await message.answer(TEXTS[lang]['not_approved'])
             return
         orders = await conn.fetch("SELECT id, cargo_type, price, comment FROM orders WHERE status = 'pending' ORDER BY id ASC LIMIT 5")
-        
+
     if not orders:
         await message.answer(TEXTS[lang]['no_orders'])
         return
-        
+
     for o in orders:
         c_type_str = "📦 Стандарт" if o['cargo_type'] == 'standard' else "🚚 Грузовой"
         text = f"📦 **Заказ #{o['id']}**\n🔹 Тип: {c_type_str}\n💵 Стоимость: `{float(o['price']):.2f} MDL`\n💬 Комм: {o['comment']}"
@@ -2235,10 +2210,6 @@ async def set_bot_commands(bot: Bot):
         BotCommand(command="order", description="Create order"),
         BotCommand(command="cancel", description="Cancel order"),
         BotCommand(command="support", description="Support"),
-        BotCommand(command="online", description="Go online"),
-        BotCommand(command="offline", description="Go offline"),
-        BotCommand(command="orders", description="Available orders"),
-        BotCommand(command="history", description="History & Earnings"),
         BotCommand(command="verify", description="Bind mobile app")
     ]
     
@@ -2248,10 +2219,6 @@ async def set_bot_commands(bot: Bot):
             BotCommand(command="order", description="Создать заказ"),
             BotCommand(command="cancel", description="Отмена заказа"),
             BotCommand(command="support", description="Техподдержка"),
-            BotCommand(command="online", description="Начать смену"),
-            BotCommand(command="offline", description="Закончить смену"),
-            BotCommand(command="orders", description="Доступные заказы"),
-            BotCommand(command="history", description="Статистика и доход"),
             BotCommand(command="verify", description="Привязать приложение")
         ],
         "ro": [
@@ -2259,10 +2226,6 @@ async def set_bot_commands(bot: Bot):
             BotCommand(command="order", description="Creare comandă"),
             BotCommand(command="cancel", description="Anulare"),
             BotCommand(command="support", description="Suport tehnic"),
-            BotCommand(command="online", description="Intrare pe tură"),
-            BotCommand(command="offline", description="Ieșire din tură"),
-            BotCommand(command="orders", description="Comenzi disponibile"),
-            BotCommand(command="history", description="Istoric și câștiguri"),
             BotCommand(command="verify", description="Conectați aplicația")
         ],
         "mo": [
@@ -2270,10 +2233,6 @@ async def set_bot_commands(bot: Bot):
             BotCommand(command="order", description="Creare comandă"),
             BotCommand(command="cancel", description="Anulare"),
             BotCommand(command="support", description="Suport tehnic"),
-            BotCommand(command="online", description="Intrare pe tură"),
-            BotCommand(command="offline", description="Ieșire din tură"),
-            BotCommand(command="orders", description="Comenzi disponibile"),
-            BotCommand(command="history", description="Istoric și câștiguri"),
             BotCommand(command="verify", description="Conectați aplicația")
         ],
         "uk": [
@@ -2281,10 +2240,6 @@ async def set_bot_commands(bot: Bot):
             BotCommand(command="order", description="Створити замовлення"),
             BotCommand(command="cancel", description="Скасувати замовлення"),
             BotCommand(command="support", description="Підтримка"),
-            BotCommand(command="online", description="Почати зміну"),
-            BotCommand(command="offline", description="Закінчити зміну"),
-            BotCommand(command="orders", description="Доступні замовлення"),
-            BotCommand(command="history", description="Статистика та дохід"),
             BotCommand(command="verify", description="Прив'язати додаток")
         ]
     }
