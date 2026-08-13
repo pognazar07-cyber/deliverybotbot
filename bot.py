@@ -1,5 +1,6 @@
 import os
 import asyncio
+import base64
 import logging
 import random
 from datetime import datetime, timedelta
@@ -9,8 +10,9 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
-    Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, 
-    ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand
+    Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
+    ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand,
+    BufferedInputFile
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -1765,6 +1767,348 @@ async def handle_get_support_tickets_api(request):
             "error": str(e)
         }, status=400)
 
+# --- REST API ДЛЯ ПРИЛОЖЕНИЯ DMD PRO COURIER ---
+# Мирroit тот же жизненный цикл заказа, что и Telegram-хендлеры ниже
+# (order_take_/order_ata_/order_atb_/order_done_), просто без чата.
+
+def _order_dto(row, include_contacts):
+    dto = {
+        "id": row["id"],
+        "cargo_type": row["cargo_type"],
+        "lat_a": float(row["lat_a"]),
+        "lon_a": float(row["lon_a"]),
+        "lat_b": float(row["lat_b"]),
+        "lon_b": float(row["lon_b"]),
+        "comment": row["comment"],
+        "price": float(row["price"]),
+        "status": row["status"],
+    }
+    if include_contacts:
+        dto["phone_sender"] = row["phone_sender"]
+        dto["phone_receiver"] = row["phone_receiver"]
+    return dto
+
+
+async def handle_courier_verify_api(request):
+    """ API: завершает привязку Telegram к приложению DMD Pro Courier
+    (тот же код из /verify, что и у клиента) и выставляет role='courier'. """
+    try:
+        data = await request.json()
+        profile_id = str(data['profile_id']).strip().upper().replace("-", "")
+        code = str(data['code']).strip()
+
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT * FROM app_verification_codes
+                WHERE profile_id = $1 AND code = $2
+            """, profile_id, code)
+
+            if not row:
+                return web.json_response({
+                    "success": False,
+                    "error": "Неверный код или неверный ID профиля приложения"
+                }, status=400)
+
+            created_at = row['created_at']
+            delta = datetime.now() - created_at.replace(tzinfo=None)
+            if delta.total_seconds() > 30:
+                await conn.execute("DELETE FROM app_verification_codes WHERE profile_id = $1", profile_id)
+                return web.json_response({
+                    "success": False,
+                    "error": "Срок действия кода подтверждения (30 секунд) истек!"
+                }, status=400)
+
+            await conn.execute("DELETE FROM app_verification_codes WHERE profile_id = $1", profile_id)
+
+            telegram_id = row['telegram_id']
+            telegram_username = row['telegram_username']
+            telegram_name = row['telegram_name']
+
+            whitelisted = await conn.fetchrow("SELECT user_id FROM whitelist WHERE user_id = $1", telegram_id)
+            auto_approved = True if whitelisted else False
+
+            await conn.execute("""
+                INSERT INTO users (user_id, role, lang, is_approved, is_online, username, app_profile_id)
+                VALUES ($1, 'courier', 'ru', $4, FALSE, $2, $3)
+                ON CONFLICT (user_id) DO UPDATE
+                SET role = 'courier', app_profile_id = $3, username = $2,
+                    is_approved = users.is_approved OR EXCLUDED.is_approved;
+            """, telegram_id, telegram_username, profile_id, auto_approved)
+
+            is_approved = await conn.fetchval("SELECT is_approved FROM users WHERE user_id = $1", telegram_id)
+
+        return web.json_response({
+            "success": True,
+            "telegram_id": telegram_id,
+            "telegram_username": telegram_username,
+            "telegram_name": telegram_name,
+            "is_approved": bool(is_approved),
+            "error": None
+        })
+    except Exception as e:
+        logging.error(f"Error in handle_courier_verify_api: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+async def handle_courier_register_photo_api(request):
+    """ API: отправка верификационного фото курьера админу на одобрение
+    (то же самое, что курьер вручную присылал боту в Telegram). """
+    try:
+        data = await request.json()
+        telegram_id = int(data['telegram_id'])
+        photo_bytes = base64.b64decode(data['photo_base64'])
+
+        async with db_pool.acquire() as conn:
+            user = await conn.fetchrow("SELECT username FROM users WHERE user_id = $1", telegram_id)
+
+        username = f"@{user['username']}" if user and user['username'] else "без username"
+        caption = f"📱 [ИЗ ПРИЛОЖЕНИЯ] Новая заявка в курьеры!\nID: `{telegram_id}`\nUsername: {username}"
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Одобрить курьера", callback_data=f"adm_appr_{telegram_id}")],
+            [InlineKeyboardButton(text="❌ Отклонить", callback_data=f"adm_decl_{telegram_id}")],
+        ])
+
+        await bot.send_photo(
+            ADMIN_ID,
+            BufferedInputFile(photo_bytes, filename="courier_verification.jpg"),
+            caption=caption, reply_markup=kb, parse_mode="Markdown"
+        )
+
+        return web.json_response({"success": True, "error": None})
+    except Exception as e:
+        logging.error(f"Error in handle_courier_register_photo_api: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=400)
+
+
+async def handle_courier_status_api(request):
+    """ API: текущий статус курьера (одобрен ли, на смене ли). """
+    try:
+        telegram_id = int(request.match_info['telegramId'])
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT role, is_approved, is_online FROM users WHERE user_id = $1", telegram_id
+            )
+        if not row:
+            return web.json_response({
+                "success": True, "role": None, "is_approved": False, "is_online": False, "error": None
+            })
+        return web.json_response({
+            "success": True,
+            "role": row["role"],
+            "is_approved": bool(row["is_approved"]),
+            "is_online": bool(row["is_online"]),
+            "error": None
+        })
+    except Exception as e:
+        logging.error(f"Error in handle_courier_status_api: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=400)
+
+
+async def _set_courier_online(telegram_id, online):
+    async with db_pool.acquire() as conn:
+        if online:
+            user = await conn.fetchrow("SELECT role, is_approved FROM users WHERE user_id = $1", telegram_id)
+            if not user or user["role"] != "courier" or not user["is_approved"]:
+                return False, "Курьер не одобрен администратором"
+        await conn.execute("UPDATE users SET is_online = $1 WHERE user_id = $2", online, telegram_id)
+    return True, None
+
+
+async def handle_courier_online_api(request):
+    """ API: аналог команды /online — выйти на смену. """
+    try:
+        telegram_id = int(request.match_info['telegramId'])
+        ok, error = await _set_courier_online(telegram_id, True)
+        if not ok:
+            return web.json_response({"success": False, "error": error}, status=403)
+        return web.json_response({"success": True, "error": None})
+    except Exception as e:
+        logging.error(f"Error in handle_courier_online_api: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=400)
+
+
+async def handle_courier_offline_api(request):
+    """ API: аналог команды /offline — уйти со смены. """
+    try:
+        telegram_id = int(request.match_info['telegramId'])
+        await _set_courier_online(telegram_id, False)
+        return web.json_response({"success": True, "error": None})
+    except Exception as e:
+        logging.error(f"Error in handle_courier_offline_api: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=400)
+
+
+async def handle_courier_available_orders_api(request):
+    """ API: список свободных заказов (без контактов — они открываются
+    только после принятия заказа, как и в Telegram-версии). """
+    try:
+        telegram_id = int(request.match_info['telegramId'])
+        async with db_pool.acquire() as conn:
+            user = await conn.fetchrow("SELECT role, is_approved FROM users WHERE user_id = $1", telegram_id)
+            if not user or user["role"] != "courier" or not user["is_approved"]:
+                return web.json_response({"success": False, "orders": [], "error": "Курьер не одобрен"}, status=403)
+            rows = await conn.fetch(
+                "SELECT * FROM orders WHERE status = 'pending' ORDER BY id ASC LIMIT 20"
+            )
+        orders = [_order_dto(r, include_contacts=False) for r in rows]
+        return web.json_response({"success": True, "orders": orders, "error": None})
+    except Exception as e:
+        logging.error(f"Error in handle_courier_available_orders_api: {e}")
+        return web.json_response({"success": False, "orders": [], "error": str(e)}, status=400)
+
+
+async def handle_courier_accept_order_api(request):
+    """ API: аналог нажатия «Принять заказ» — mirrors cb_courier_take_order. """
+    try:
+        order_id = int(request.match_info['id'])
+        data = await request.json()
+        courier_id = int(data['courier_id'])
+
+        async with db_pool.acquire() as conn:
+            user = await conn.fetchrow("SELECT role, is_approved FROM users WHERE user_id = $1", courier_id)
+            if not user or user["role"] != "courier" or not user["is_approved"]:
+                return web.json_response({"success": False, "error": "Курьер не одобрен"}, status=403)
+
+            order = await conn.fetchrow("""
+                UPDATE orders SET courier_id = $1, status = 'accepted' WHERE id = $2 AND status = 'pending' RETURNING *
+            """, courier_id, order_id)
+
+        if not order:
+            return web.json_response({"success": False, "error": "Заказ уже взят другим курьером"}, status=409)
+
+        try:
+            await bot.send_message(order['client_id'], f"🤝 Ваш заказ #{order_id} принят курьером!")
+        except Exception:
+            pass
+
+        if order_id in active_afk_tasks:
+            active_afk_tasks[order_id].cancel()
+        active_afk_tasks[order_id] = asyncio.create_task(
+            start_afk_inactivity_timer(order_id, 'accepted', 600, order['client_id'], courier_id)
+        )
+
+        return web.json_response({"success": True, "order": _order_dto(order, include_contacts=True), "error": None})
+    except Exception as e:
+        logging.error(f"Error in handle_courier_accept_order_api: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=400)
+
+
+async def handle_courier_active_order_api(request):
+    """ API: текущий заказ курьера в работе (для экрана доставки). """
+    try:
+        telegram_id = int(request.match_info['telegramId'])
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT * FROM orders
+                WHERE courier_id = $1 AND status IN ('accepted', 'at_a', 'at_b')
+                ORDER BY id DESC LIMIT 1
+            """, telegram_id)
+        if not row:
+            return web.json_response({"success": True, "order": None, "error": None})
+        return web.json_response({"success": True, "order": _order_dto(row, include_contacts=True), "error": None})
+    except Exception as e:
+        logging.error(f"Error in handle_courier_active_order_api: {e}")
+        return web.json_response({"success": False, "order": None, "error": str(e)}, status=400)
+
+
+_COURIER_STATUS_TRANSITIONS = {
+    'at_a': ('accepted', 600, 2400),
+    'at_b': ('at_a', 2400, None),
+    'completed': ('at_b', None, None),
+}
+
+
+async def handle_courier_update_status_api(request):
+    """ API: продвинуть заказ по статусам at_a -> at_b -> completed,
+    mirrors cb_courier_at_point_a / _b / cb_courier_complete_order. """
+    try:
+        order_id = int(request.match_info['id'])
+        data = await request.json()
+        courier_id = int(data['courier_id'])
+        new_status = str(data['status'])
+
+        if new_status not in _COURIER_STATUS_TRANSITIONS:
+            return web.json_response({"success": False, "error": "Недопустимый статус"}, status=400)
+
+        expected_prev, _, next_timeout = _COURIER_STATUS_TRANSITIONS[new_status]
+
+        async with db_pool.acquire() as conn:
+            order = await conn.fetchrow(
+                "SELECT * FROM orders WHERE id = $1 AND courier_id = $2", order_id, courier_id
+            )
+            if not order:
+                return web.json_response({"success": False, "error": "Заказ не найден"}, status=404)
+            if order['status'] != expected_prev:
+                return web.json_response({
+                    "success": False,
+                    "error": f"Заказ должен быть в статусе '{expected_prev}', сейчас '{order['status']}'"
+                }, status=409)
+
+            await conn.execute("UPDATE orders SET status = $1 WHERE id = $2", new_status, order_id)
+
+        if order_id in active_afk_tasks:
+            active_afk_tasks[order_id].cancel()
+            active_afk_tasks.pop(order_id, None)
+
+        client_id = order['client_id']
+        try:
+            cl_lang = await get_lang(client_id)
+            if new_status == 'at_a':
+                await bot.send_message(client_id, TEXTS[cl_lang]['client_notif_courier_at_a'])
+            elif new_status == 'at_b':
+                await bot.send_message(client_id, TEXTS[cl_lang]['client_notif_courier_at_b'])
+            elif new_status == 'completed':
+                await bot.send_message(client_id, "🎉 Ваш заказ успешно доставлен! Спасибо, что выбрали наш сервис!")
+        except Exception:
+            pass
+
+        if next_timeout is not None:
+            active_afk_tasks[order_id] = asyncio.create_task(
+                start_afk_inactivity_timer(order_id, new_status, next_timeout, client_id, courier_id)
+            )
+
+        return web.json_response({"success": True, "error": None})
+    except Exception as e:
+        logging.error(f"Error in handle_courier_update_status_api: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=400)
+
+
+async def handle_courier_history_api(request):
+    """ API: заработок и история курьера — mirrors cmd_courier_history. """
+    try:
+        telegram_id = int(request.match_info['telegramId'])
+        async with db_pool.acquire() as conn:
+            user = await conn.fetchrow("SELECT role, is_approved FROM users WHERE user_id = $1", telegram_id)
+            if not user or user["role"] != "courier" or not user["is_approved"]:
+                return web.json_response({"success": False, "error": "Курьер не одобрен"}, status=403)
+
+            stats = await conn.fetchrow("""
+                SELECT COALESCE(SUM(price), 0) AS total_earnings, COUNT(*) AS total_count
+                FROM orders
+                WHERE courier_id = $1
+                  AND status = 'completed'
+                  AND created_at >= date_trunc('month', CURRENT_TIMESTAMP)
+            """, telegram_id)
+
+            rows = await conn.fetch("""
+                SELECT * FROM orders
+                WHERE courier_id = $1 AND status = 'completed'
+                ORDER BY created_at DESC LIMIT 50
+            """, telegram_id)
+
+        orders = [_order_dto(r, include_contacts=False) for r in rows]
+        return web.json_response({
+            "success": True,
+            "earnings_this_month": round(float(stats['total_earnings']), 2),
+            "completed_this_month": stats['total_count'],
+            "orders": orders,
+            "error": None
+        })
+    except Exception as e:
+        logging.error(f"Error in handle_courier_history_api: {e}")
+        return web.json_response({"success": False, "orders": [], "error": str(e)}, status=400)
+
 # --- БАЗОВЫЕ КОМАНДЫ И РЕГИСТРАЦИЯ ---
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
@@ -2276,6 +2620,18 @@ async def main():
     app.router.add_get("/api/orders/history/{clientId}", handle_get_order_history_api)
     app.router.add_post("/api/support", handle_submit_support_api)
     app.router.add_get("/api/support/{clientId}", handle_get_support_tickets_api)
+
+    # DMD Pro Courier
+    app.router.add_post("/api/courier/verify", handle_courier_verify_api)
+    app.router.add_post("/api/courier/register-photo", handle_courier_register_photo_api)
+    app.router.add_get("/api/courier/status/{telegramId}", handle_courier_status_api)
+    app.router.add_post("/api/courier/online/{telegramId}", handle_courier_online_api)
+    app.router.add_post("/api/courier/offline/{telegramId}", handle_courier_offline_api)
+    app.router.add_get("/api/courier/orders/available/{telegramId}", handle_courier_available_orders_api)
+    app.router.add_post("/api/courier/orders/{id}/accept", handle_courier_accept_order_api)
+    app.router.add_get("/api/courier/orders/active/{telegramId}", handle_courier_active_order_api)
+    app.router.add_post("/api/courier/orders/{id}/status", handle_courier_update_status_api)
+    app.router.add_get("/api/courier/history/{telegramId}", handle_courier_history_api)
 
     runner = web.AppRunner(app)
     await runner.setup()
