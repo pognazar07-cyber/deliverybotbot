@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:dmd_design/dmd_design.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -30,11 +33,32 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
   final _api = ApiService();
   late CourierOrder _order;
   bool _advancing = false;
+  Timer? _locationTimer;
 
   @override
   void initState() {
     super.initState();
     _order = widget.initialOrder;
+    _locationTimer = Timer.periodic(const Duration(seconds: 15), (_) => _reportLocation());
+    _reportLocation();
+  }
+
+  Future<void> _reportLocation() async {
+    try {
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition();
+      await _api.reportLocation(telegramId: widget.courierId, lat: pos.latitude, lon: pos.longitude);
+    } catch (_) {
+      // Best-effort — a missed location ping isn't worth surfacing to the courier.
+    }
   }
 
   Future<void> _callPhone(String? phone) async {
@@ -75,6 +99,12 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
     } finally {
       if (mounted) setState(() => _advancing = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _locationTimer?.cancel();
+    super.dispose();
   }
 
   @override

@@ -296,6 +296,12 @@ async def init_db():
             ALTER TABLE users ADD COLUMN IF NOT EXISTS app_profile_id TEXT;
         """)
 
+        # Миграция: последняя известная геопозиция курьера (для live-трекинга в DMD client)
+        await conn.execute("""
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS last_lat DOUBLE PRECISION;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS last_lon DOUBLE PRECISION;
+        """)
+
         # Белый список
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS whitelist (
@@ -1561,20 +1567,20 @@ async def handle_get_active_order_api(request):
         client_id = int(request.match_info['clientId'])
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow("""
-                SELECT o.*, u.username as courier_name 
-                FROM orders o 
-                LEFT JOIN users u ON o.courier_id = u.user_id 
+                SELECT o.*, u.username as courier_name, u.last_lat, u.last_lon
+                FROM orders o
+                LEFT JOIN users u ON o.courier_id = u.user_id
                 WHERE o.client_id = $1 AND o.status IN ('pending', 'accepted', 'at_a', 'at_b')
                 ORDER BY o.id DESC LIMIT 1
             """, client_id)
-            
+
         if not row:
             return web.json_response({
                 "success": True,
                 "order": None,
                 "error": None
             })
-            
+
         order_dto = {
             "id": row['id'],
             "cargo_type": row['cargo_type'],
@@ -1589,8 +1595,8 @@ async def handle_get_active_order_api(request):
             "status": row['status'],
             "courier_id": row['courier_id'],
             "courier_name": row['courier_name'],
-            "courier_lat": None,
-            "courier_lon": None
+            "courier_lat": float(row['last_lat']) if row['last_lat'] is not None else None,
+            "courier_lon": float(row['last_lon']) if row['last_lon'] is not None else None
         }
         
         return web.json_response({
@@ -1936,6 +1942,24 @@ async def handle_courier_offline_api(request):
         return web.json_response({"success": True, "error": None})
     except Exception as e:
         logging.error(f"Error in handle_courier_offline_api: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=400)
+
+
+async def handle_courier_location_api(request):
+    """ API: курьер периодически шлёт свою позицию во время активной
+    доставки — клиент видит её на карте через /api/orders/active. """
+    try:
+        telegram_id = int(request.match_info['telegramId'])
+        data = await request.json()
+        lat = float(data['lat'])
+        lon = float(data['lon'])
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET last_lat = $1, last_lon = $2 WHERE user_id = $3", lat, lon, telegram_id
+            )
+        return web.json_response({"success": True, "error": None})
+    except Exception as e:
+        logging.error(f"Error in handle_courier_location_api: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=400)
 
 
@@ -2627,6 +2651,7 @@ async def main():
     app.router.add_get("/api/courier/status/{telegramId}", handle_courier_status_api)
     app.router.add_post("/api/courier/online/{telegramId}", handle_courier_online_api)
     app.router.add_post("/api/courier/offline/{telegramId}", handle_courier_offline_api)
+    app.router.add_post("/api/courier/location/{telegramId}", handle_courier_location_api)
     app.router.add_get("/api/courier/orders/available/{telegramId}", handle_courier_available_orders_api)
     app.router.add_post("/api/courier/orders/{id}/accept", handle_courier_accept_order_api)
     app.router.add_get("/api/courier/orders/active/{telegramId}", handle_courier_active_order_api)

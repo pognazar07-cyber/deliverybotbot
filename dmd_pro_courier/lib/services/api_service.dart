@@ -121,6 +121,19 @@ class ApiService {
     _decode(resp);
   }
 
+  /// POST /api/courier/location/{telegramId} — reported periodically while
+  /// a delivery is in progress so the client can see the courier on the map.
+  Future<void> reportLocation({required int telegramId, required double lat, required double lon}) async {
+    final resp = await _client
+        .post(
+          _uri('/api/courier/location/$telegramId'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'lat': lat, 'lon': lon}),
+        )
+        .timeout(const Duration(seconds: 15));
+    _decode(resp);
+  }
+
   /// GET /api/courier/orders/available/{telegramId}
   Future<List<CourierOrder>> getAvailableOrders(int telegramId) async {
     final resp = await _client
