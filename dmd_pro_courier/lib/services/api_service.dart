@@ -29,8 +29,14 @@ class CourierStatus {
   final String? role;
   final bool isApproved;
   final bool isOnline;
+  final bool isDeclined;
 
-  const CourierStatus({required this.role, required this.isApproved, required this.isOnline});
+  const CourierStatus({
+    required this.role,
+    required this.isApproved,
+    required this.isOnline,
+    required this.isDeclined,
+  });
 }
 
 class CourierHistory {
@@ -104,6 +110,7 @@ class ApiService {
       role: body['role'] as String?,
       isApproved: body['is_approved'] as bool? ?? false,
       isOnline: body['is_online'] as bool? ?? false,
+      isDeclined: body['is_declined'] as bool? ?? false,
     );
   }
 

@@ -73,11 +73,11 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
     setState(() => _advancing = true);
     try {
       await _api.updateOrderStatus(orderId: _order.id, courierId: widget.courierId, status: next);
+      if (!mounted) return;
       if (next == 'completed') {
         widget.onOrderClosed();
         return;
       }
-      if (!mounted) return;
       setState(() {
         _order = CourierOrder(
           id: _order.id,

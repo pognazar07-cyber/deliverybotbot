@@ -302,6 +302,13 @@ async def init_db():
             ALTER TABLE users ADD COLUMN IF NOT EXISTS last_lon DOUBLE PRECISION;
         """)
 
+        # Миграция: явный статус "отклонён админом", чтобы DMD Pro Courier
+        # мог отличить "заявка на рассмотрении" от "отклонена" и дать
+        # курьеру отправить фото заново вместо вечного "ожидайте".
+        await conn.execute("""
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS courier_declined BOOLEAN DEFAULT FALSE;
+        """)
+
         # Белый список
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS whitelist (
@@ -1866,6 +1873,9 @@ async def handle_courier_register_photo_api(request):
 
         async with db_pool.acquire() as conn:
             user = await conn.fetchrow("SELECT username FROM users WHERE user_id = $1", telegram_id)
+            # A fresh submission always starts a new review cycle, even if a
+            # previous one was declined.
+            await conn.execute("UPDATE users SET courier_declined = FALSE WHERE user_id = $1", telegram_id)
 
         username = f"@{user['username']}" if user and user['username'] else "без username"
         caption = f"📱 [ИЗ ПРИЛОЖЕНИЯ] Новая заявка в курьеры!\nID: `{telegram_id}`\nUsername: {username}"
@@ -1893,17 +1903,19 @@ async def handle_courier_status_api(request):
         telegram_id = int(request.match_info['telegramId'])
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT role, is_approved, is_online FROM users WHERE user_id = $1", telegram_id
+                "SELECT role, is_approved, is_online, courier_declined FROM users WHERE user_id = $1", telegram_id
             )
         if not row:
             return web.json_response({
-                "success": True, "role": None, "is_approved": False, "is_online": False, "error": None
+                "success": True, "role": None, "is_approved": False, "is_online": False,
+                "is_declined": False, "error": None
             })
         return web.json_response({
             "success": True,
             "role": row["role"],
             "is_approved": bool(row["is_approved"]),
             "is_online": bool(row["is_online"]),
+            "is_declined": bool(row["courier_declined"]),
             "error": None
         })
     except Exception as e:
@@ -1917,7 +1929,15 @@ async def _set_courier_online(telegram_id, online):
             user = await conn.fetchrow("SELECT role, is_approved FROM users WHERE user_id = $1", telegram_id)
             if not user or user["role"] != "courier" or not user["is_approved"]:
                 return False, "Курьер не одобрен администратором"
-        await conn.execute("UPDATE users SET is_online = $1 WHERE user_id = $2", online, telegram_id)
+            await conn.execute("UPDATE users SET is_online = TRUE WHERE user_id = $1", telegram_id)
+        else:
+            # Clear the last known position too, so it can't leak into a
+            # future delivery as a stale "courier location" once they're
+            # back online and assigned a new order.
+            await conn.execute(
+                "UPDATE users SET is_online = FALSE, last_lat = NULL, last_lon = NULL WHERE user_id = $1",
+                telegram_id
+            )
     return True, None
 
 
@@ -1954,6 +1974,9 @@ async def handle_courier_location_api(request):
         lat = float(data['lat'])
         lon = float(data['lon'])
         async with db_pool.acquire() as conn:
+            user = await conn.fetchrow("SELECT role, is_approved FROM users WHERE user_id = $1", telegram_id)
+            if not user or user["role"] != "courier" or not user["is_approved"]:
+                return web.json_response({"success": False, "error": "Курьер не одобрен"}, status=403)
             await conn.execute(
                 "UPDATE users SET last_lat = $1, last_lon = $2 WHERE user_id = $3", lat, lon, telegram_id
             )
@@ -1997,6 +2020,13 @@ async def handle_courier_accept_order_api(request):
             order = await conn.fetchrow("""
                 UPDATE orders SET courier_id = $1, status = 'accepted' WHERE id = $2 AND status = 'pending' RETURNING *
             """, courier_id, order_id)
+
+            if order:
+                # Clear any stale position from a previous delivery so the
+                # client doesn't see a leftover pin until the first fresh ping.
+                await conn.execute(
+                    "UPDATE users SET last_lat = NULL, last_lon = NULL WHERE user_id = $1", courier_id
+                )
 
         if not order:
             return web.json_response({"success": False, "error": "Заказ уже взят другим курьером"}, status=409)
@@ -2058,18 +2088,24 @@ async def handle_courier_update_status_api(request):
         expected_prev, _, next_timeout = _COURIER_STATUS_TRANSITIONS[new_status]
 
         async with db_pool.acquire() as conn:
-            order = await conn.fetchrow(
-                "SELECT * FROM orders WHERE id = $1 AND courier_id = $2", order_id, courier_id
-            )
+            # Atomic check-and-set (WHERE status = expected_prev) so two
+            # concurrent requests for the same transition can't both succeed.
+            order = await conn.fetchrow("""
+                UPDATE orders SET status = $1
+                WHERE id = $2 AND courier_id = $3 AND status = $4
+                RETURNING *
+            """, new_status, order_id, courier_id, expected_prev)
+
             if not order:
-                return web.json_response({"success": False, "error": "Заказ не найден"}, status=404)
-            if order['status'] != expected_prev:
+                existing = await conn.fetchrow(
+                    "SELECT status FROM orders WHERE id = $1 AND courier_id = $2", order_id, courier_id
+                )
+                if not existing:
+                    return web.json_response({"success": False, "error": "Заказ не найден"}, status=404)
                 return web.json_response({
                     "success": False,
-                    "error": f"Заказ должен быть в статусе '{expected_prev}', сейчас '{order['status']}'"
+                    "error": f"Заказ должен быть в статусе '{expected_prev}', сейчас '{existing['status']}'"
                 }, status=409)
-
-            await conn.execute("UPDATE orders SET status = $1 WHERE id = $2", new_status, order_id)
 
         if order_id in active_afk_tasks:
             active_afk_tasks[order_id].cancel()
@@ -2167,8 +2203,14 @@ async def cmd_become_courier(message: Message, state: FSMContext):
 
     async with db_pool.acquire() as conn:
         whitelisted = await conn.fetchrow("SELECT user_id FROM whitelist WHERE user_id = $1", message.from_user.id)
-        is_approved = True if whitelisted else False
-        await conn.execute("UPDATE users SET role = 'courier', is_approved = $1 WHERE user_id = $2", is_approved, message.from_user.id)
+        auto_approved = True if whitelisted else False
+        # OR, not overwrite: re-running /courier must never downgrade someone
+        # an admin already approved by hand (whitelist only covers auto-approval).
+        await conn.execute("""
+            UPDATE users SET role = 'courier', is_approved = is_approved OR $1
+            WHERE user_id = $2
+        """, auto_approved, message.from_user.id)
+        is_approved = await conn.fetchval("SELECT is_approved FROM users WHERE user_id = $1", message.from_user.id)
 
     if is_approved:
         await message.answer(TEXTS[lang]['approved'])
@@ -2181,6 +2223,9 @@ async def cmd_become_courier(message: Message, state: FSMContext):
 async def courier_photo_reg(message: Message, state: FSMContext):
     lang = await get_lang(message.from_user.id)
     photo_id = message.photo[-1].file_id
+
+    async with db_pool.acquire() as conn:
+        await conn.execute("UPDATE users SET courier_declined = FALSE WHERE user_id = $1", message.from_user.id)
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -2383,7 +2428,9 @@ async def cb_admin_approve_courier(callback: CallbackQuery):
     target_courier_id = int(callback.data.split("_")[2])
     
     async with db_pool.acquire() as conn:
-        await conn.execute("UPDATE users SET is_approved = TRUE WHERE user_id = $1", target_courier_id)
+        await conn.execute(
+            "UPDATE users SET is_approved = TRUE, courier_declined = FALSE WHERE user_id = $1", target_courier_id
+        )
         target_lang = await conn.fetchval("SELECT lang FROM users WHERE user_id = $1", target_courier_id) or 'ru'
         
     await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n✅ **Заявка одобрена админом!**")
@@ -2397,7 +2444,10 @@ async def cb_admin_approve_courier(callback: CallbackQuery):
 async def cb_admin_decline_courier(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID: return
     target_courier_id = int(callback.data.split("_")[2])
-    
+
+    async with db_pool.acquire() as conn:
+        await conn.execute("UPDATE users SET courier_declined = TRUE WHERE user_id = $1", target_courier_id)
+
     await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n❌ **Заявка отклонена админом.**")
     try:
         await bot.send_message(target_courier_id, "⚠️ Ваша заявка на верификацию курьера была отклонена администратором.")

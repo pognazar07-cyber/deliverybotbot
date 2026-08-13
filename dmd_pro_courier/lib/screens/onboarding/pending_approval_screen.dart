@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/strings.dart';
 import '../../services/api_service.dart';
+import '../../services/storage_service.dart';
 import '../home_screen.dart';
+import 'photo_verification_screen.dart';
 
 class PendingApprovalScreen extends StatefulWidget {
   final String lang;
@@ -17,6 +19,7 @@ class PendingApprovalScreen extends StatefulWidget {
 
 class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
   final _api = ApiService();
+  final _storage = StorageService();
   bool _checking = false;
 
   Future<void> _checkStatus() async {
@@ -28,6 +31,14 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (_) => HomeScreen(lang: widget.lang, telegramId: widget.telegramId),
+          ),
+        );
+      } else if (status.isDeclined) {
+        await _storage.setPhotoSubmitted(false);
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => PhotoVerificationScreen(lang: widget.lang, telegramId: widget.telegramId),
           ),
         );
       } else {

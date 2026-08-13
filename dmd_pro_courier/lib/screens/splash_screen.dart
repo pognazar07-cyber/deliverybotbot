@@ -53,6 +53,17 @@ class _SplashScreenState extends State<SplashScreen> {
         return;
       }
 
+      if (status.isDeclined) {
+        // The server is the source of truth for a decline — always send
+        // the courier back to resubmit, regardless of the local flag.
+        await _storage.setPhotoSubmitted(false);
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => PhotoVerificationScreen(lang: lang, telegramId: telegramId)),
+        );
+        return;
+      }
+
       final photoSubmitted = await _storage.getPhotoSubmitted();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(

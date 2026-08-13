@@ -71,7 +71,10 @@ class _ShiftTabState extends State<ShiftTab> {
   }
 
   Future<void> _refreshQuietly() async {
-    if (!mounted || _togglingShift) return;
+    // While a delivery is active, ActiveDeliveryScreen owns the screen (and
+    // its own location-reporting timer); this loop's job — surfacing new
+    // available orders — has nothing to do until that delivery closes.
+    if (!mounted || _togglingShift || _activeOrder != null) return;
     try {
       final active = await _api.getActiveOrder(widget.courierId);
       if (!mounted) return;
