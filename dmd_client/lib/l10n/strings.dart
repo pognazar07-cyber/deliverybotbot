@@ -170,6 +170,11 @@ class AppStrings {
     },
     'updateNow': {'ru': 'Обновить сейчас', 'ro': 'Actualizează acum', 'en': 'Update now'},
     'later': {'ru': 'Позже', 'ro': 'Mai târziu', 'en': 'Later'},
+    'mapWarmingUp': {
+      'ru': 'Сервис карты запускается, подождите немного...',
+      'ro': 'Serviciul hărții pornește, așteptați puțin...',
+      'en': 'Map service is starting up, please wait...',
+    },
     'orderClosedNotifBody': {
       'ru': 'Статус заказа изменился — откройте приложение',
       'ro': 'Statusul comenzii s-a schimbat — deschideți aplicația',
@@ -233,6 +238,7 @@ class AppStrings {
   String get updateNow => _get('updateNow');
   String get later => _get('later');
   String get orderClosedNotifBody => _get('orderClosedNotifBody');
+  String get mapWarmingUp => _get('mapWarmingUp');
 
   String statusLabel(String status) {
     switch (status) {

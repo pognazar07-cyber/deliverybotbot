@@ -12,6 +12,12 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// The backend's map service was idle and is cold-starting (see bot.py's
+/// ensure_osrm_started) — this isn't an error, just "try again shortly".
+class MapWarmingUpException implements Exception {
+  const MapWarmingUpException();
+}
+
 class VerifyResult {
   final int telegramId;
   final String telegramUsername;
@@ -93,7 +99,12 @@ class ApiService {
           }),
         )
         .timeout(const Duration(seconds: 15));
-    final body = _decode(resp);
+
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    if (body['success'] != true) {
+      if (body['warming_up'] == true) throw const MapWarmingUpException();
+      throw ApiException(body['error'] as String? ?? 'Unknown server error');
+    }
     return (
       distanceKm: (body['distance_km'] as num).toDouble(),
       price: (body['price'] as num).toDouble(),

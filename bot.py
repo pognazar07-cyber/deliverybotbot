@@ -703,8 +703,17 @@ async def process_admin_reply_send(message: Message, state: FSMContext):
         
     await state.clear()
 
-# --- РАСЧЕТ МАРШРУТА OPENSTREETMAP & OSRM ---
+# --- РАСЧЕТ МАРШРУТА: СВОЙ OSRM (Молдова) С АВТО-ВКЛ/ВЫКЛ ---
+OSRM_CONTAINER_NAME = "dmd-osrm"
+OSRM_LOCAL_URL = "http://127.0.0.1:5001"
+OSRM_IDLE_TIMEOUT_MINUTES = 10  # останавливаем контейнер, если им не пользовались столько времени
+OSRM_STARTUP_TIMEOUT_SECONDS = 20  # сколько ждём поднятия контейнера, прежде чем сдаться
+
 _last_osrm_fallback_alert = None  # throttles admin alerts so an outage doesn't spam Telegram
+_osrm_last_used = None  # datetime; None means "considered stopped/idle" for the watcher
+_osrm_starting = None  # asyncio.Event set while a start is in progress, so concurrent
+                        # requests wait on the same startup instead of racing `docker start`
+
 
 async def _alert_osrm_fallback(lat1, lon1, lat2, lon2, reason):
     global _last_osrm_fallback_alert
@@ -715,7 +724,7 @@ async def _alert_osrm_fallback(lat1, lon1, lat2, lon2, reason):
     try:
         await bot.send_message(
             ADMIN_ID,
-            f"⚠️ **OSRM не смог посчитать маршрут** ({reason}).\n"
+            f"⚠️ **Свой OSRM не смог посчитать маршрут** ({reason}).\n"
             f"Использую запасное расстояние 5 км — цена для текущих заказов может быть занижена/завышена.\n"
             f"Точка А: `{lat1}, {lon1}` → Точка Б: `{lat2}, {lon2}`\n"
             f"_Повторные алерты подавляются на 15 минут._",
@@ -725,18 +734,102 @@ async def _alert_osrm_fallback(lat1, lon1, lat2, lon2, reason):
         pass
 
 
+async def _run_docker(*args):
+    proc = await asyncio.create_subprocess_exec(
+        "docker", *args,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    return proc.returncode, stdout.decode().strip(), stderr.decode().strip()
+
+
+async def _osrm_is_running():
+    code, out, _ = await _run_docker("inspect", "-f", "{{.State.Running}}", OSRM_CONTAINER_NAME)
+    return code == 0 and out == "true"
+
+
+async def _osrm_health_check():
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{OSRM_LOCAL_URL}/route/v1/driving/28.8638,47.0105;28.87,47.02?overview=false",
+                timeout=aiohttp.ClientTimeout(total=2)
+            ) as resp:
+                return resp.status == 200
+    except Exception:
+        return False
+
+
+async def ensure_osrm_started():
+    """ Поднимает контейнер с картой Молдовы по требованию, если он сейчас
+    остановлен (экономия ресурсов сервера), и ждёт, пока он реально начнёт
+    отвечать. Конкурентные запросы во время старта ждут один и тот же
+    Event вместо того, чтобы дёргать `docker start` параллельно. """
+    global _osrm_last_used, _osrm_starting
+
+    if _osrm_starting is not None:
+        await _osrm_starting.wait()
+        _osrm_last_used = datetime.now()
+        return
+
+    if await _osrm_health_check():
+        _osrm_last_used = datetime.now()
+        return
+
+    _osrm_starting = asyncio.Event()
+    try:
+        if not await _osrm_is_running():
+            await _run_docker("start", OSRM_CONTAINER_NAME)
+
+        deadline = datetime.now() + timedelta(seconds=OSRM_STARTUP_TIMEOUT_SECONDS)
+        while datetime.now() < deadline:
+            if await _osrm_health_check():
+                _osrm_last_used = datetime.now()
+                return
+            await asyncio.sleep(0.5)
+    finally:
+        _osrm_starting.set()
+        _osrm_starting = None
+
+
+async def osrm_is_warming_up():
+    """ True пока идёт холодный старт — ручки могут сразу вернуть клиенту
+    "подождите", вместо того чтобы держать HTTP-запрос подвешенным. """
+    return _osrm_starting is not None
+
+
+async def _osrm_idle_watcher():
+    """ Фоновая задача: раз в пару минут проверяет, не простаивает ли OSRM
+    дольше OSRM_IDLE_TIMEOUT_MINUTES, и если да — останавливает контейнер. """
+    global _osrm_last_used
+    while True:
+        await asyncio.sleep(120)
+        try:
+            if _osrm_last_used is None:
+                continue
+            idle_for = datetime.now() - _osrm_last_used
+            if idle_for > timedelta(minutes=OSRM_IDLE_TIMEOUT_MINUTES) and await _osrm_is_running():
+                await _run_docker("stop", OSRM_CONTAINER_NAME)
+                _osrm_last_used = None
+                logging.info("OSRM контейнер остановлен по простою")
+        except Exception as e:
+            logging.error(f"Ошибка в osrm idle watcher: {e}")
+
+
 async def get_osrm_data(lat1, lon1, lat2, lon2):
     # OpenStreetMap URL for driving route using OSRM engine
     map_url = f"https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route={lat1},{lon1};{lat2},{lon2}"
-    osrm_api = (
-        f"https://router.project-osrm.org/route/v1/driving/"
-        f"{lon1},{lat1};{lon2},{lat2}"
-        f"?overview=false&geometries=geojson"
-    )
+
     dist_km = 5.0
     try:
+        await ensure_osrm_started()
+        osrm_api = (
+            f"{OSRM_LOCAL_URL}/route/v1/driving/"
+            f"{lon1},{lat1};{lon2},{lat2}"
+            f"?overview=false&geometries=geojson"
+        )
         async with aiohttp.ClientSession() as session:
-            async with session.get(osrm_api, timeout=10) as resp:
+            async with session.get(osrm_api, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 data = await resp.json()
                 if data.get("routes"):
                     dist_km = data["routes"][0]["distance"] / 1000
@@ -1551,18 +1644,36 @@ async def handle_quote_api(request):
         lat_b = float(data['lat_b'])
         lon_b = float(data['lon_b'])
 
+        # Карта могла "заснуть" от простоя. Если сейчас идёт холодный старт
+        # (или его вот-вот придётся запустить) — не держим HTTP-запрос
+        # висящим ~20 секунд, а сразу просим приложение подождать и
+        # повторить самому — так UI может честно показать "запускаем карту".
+        if not await _osrm_health_check():
+            if not await osrm_is_warming_up():
+                asyncio.create_task(ensure_osrm_started())
+            return web.json_response({
+                "success": False,
+                "warming_up": True,
+                "distance_km": None,
+                "price": None,
+                "error": "Сервис карты запускается, повторите через несколько секунд"
+            }, status=503)
+
         dist_km, _ = await get_osrm_data(lat_a, lon_a, lat_b, lon_b)
         price = calculate_price(dist_km, cargo_type)
 
         return web.json_response({
             "success": True,
+            "warming_up": False,
             "distance_km": dist_km,
             "price": price,
             "error": None
         })
     except Exception as e:
         logging.error(f"Error in handle_quote_api: {e}")
-        return web.json_response({"success": False, "distance_km": None, "price": None, "error": str(e)}, status=400)
+        return web.json_response({
+            "success": False, "warming_up": False, "distance_km": None, "price": None, "error": str(e)
+        }, status=400)
 
 
 async def handle_create_order_api(request):
@@ -2738,6 +2849,7 @@ async def set_bot_commands(bot: Bot):
 async def main():
     await init_db()
     await set_bot_commands(bot)
+    asyncio.create_task(_osrm_idle_watcher())
 
     app = web.Application()
     

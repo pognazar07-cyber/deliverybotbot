@@ -29,6 +29,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   RouteQuote? _quote;
   bool _quoting = false;
+  bool _warmingUp = false;
   bool _submitting = false;
   String? _error;
 
@@ -58,12 +59,18 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       setState(() => _quote = null);
       return;
     }
-    setState(() => _quoting = true);
+    setState(() {
+      _quoting = true;
+      _warmingUp = false;
+    });
     try {
       final quote = await _pricing.quote(
         pointA: _pointA!.point,
         pointB: _pointB!.point,
         cargoType: _cargoType,
+        onWarmingUp: () {
+          if (mounted) setState(() => _warmingUp = true);
+        },
       );
       if (!mounted) return;
       setState(() => _quote = quote);
@@ -174,7 +181,18 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               decoration: InputDecoration(labelText: s.comment, border: const OutlineInputBorder()),
             ),
             const SizedBox(height: 20),
-            if (_quoting) const Center(child: CircularProgressIndicator()),
+            if (_quoting)
+              Center(
+                child: Column(
+                  children: [
+                    const CircularProgressIndicator(),
+                    if (_warmingUp) ...[
+                      const SizedBox(height: 12),
+                      Text(s.mapWarmingUp, textAlign: TextAlign.center),
+                    ],
+                  ],
+                ),
+              ),
             if (_quote != null && !_quoting)
               Card(
                 color: Theme.of(context).colorScheme.primaryContainer,
