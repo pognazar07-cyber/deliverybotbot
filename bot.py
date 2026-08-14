@@ -704,6 +704,27 @@ async def process_admin_reply_send(message: Message, state: FSMContext):
     await state.clear()
 
 # --- РАСЧЕТ МАРШРУТА OPENSTREETMAP & OSRM ---
+_last_osrm_fallback_alert = None  # throttles admin alerts so an outage doesn't spam Telegram
+
+async def _alert_osrm_fallback(lat1, lon1, lat2, lon2, reason):
+    global _last_osrm_fallback_alert
+    now = datetime.now()
+    if _last_osrm_fallback_alert and (now - _last_osrm_fallback_alert).total_seconds() < 900:
+        return  # already alerted in the last 15 minutes, an outage doesn't need a message per order
+    _last_osrm_fallback_alert = now
+    try:
+        await bot.send_message(
+            ADMIN_ID,
+            f"⚠️ **OSRM не смог посчитать маршрут** ({reason}).\n"
+            f"Использую запасное расстояние 5 км — цена для текущих заказов может быть занижена/завышена.\n"
+            f"Точка А: `{lat1}, {lon1}` → Точка Б: `{lat2}, {lon2}`\n"
+            f"_Повторные алерты подавляются на 15 минут._",
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
+
+
 async def get_osrm_data(lat1, lon1, lat2, lon2):
     # OpenStreetMap URL for driving route using OSRM engine
     map_url = f"https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route={lat1},{lon1};{lat2},{lon2}"
@@ -719,8 +740,11 @@ async def get_osrm_data(lat1, lon1, lat2, lon2):
                 data = await resp.json()
                 if data.get("routes"):
                     dist_km = data["routes"][0]["distance"] / 1000
+                else:
+                    await _alert_osrm_fallback(lat1, lon1, lat2, lon2, "маршрут не найден")
     except Exception as e:
         logging.error(f"Routing distance fetch error: {e}")
+        await _alert_osrm_fallback(lat1, lon1, lat2, lon2, str(e))
 
     return round(dist_km, 2), map_url
 
