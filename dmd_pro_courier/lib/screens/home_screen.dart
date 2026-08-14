@@ -1,3 +1,4 @@
+import 'package:dmd_design/dmd_design.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/strings.dart';
@@ -18,6 +19,12 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    DmdNotifications.requestPermission();
+  }
 
   @override
   Widget build(BuildContext context) {

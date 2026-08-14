@@ -45,8 +45,17 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       final updated = await _api.getActiveOrder(widget.clientId);
       if (!mounted) return;
       if (updated == null) {
+        final s = AppStrings(widget.lang);
+        DmdNotifications.show(title: '${s.appName} · #${_order.id}', body: s.orderClosedNotifBody);
         widget.onOrderClosed();
         return;
+      }
+      if (updated.status != _order.status) {
+        final s = AppStrings(widget.lang);
+        DmdNotifications.show(
+          title: '${s.appName} · #${updated.id}',
+          body: s.statusLabel(updated.status),
+        );
       }
       setState(() => _order = updated);
     } catch (_) {

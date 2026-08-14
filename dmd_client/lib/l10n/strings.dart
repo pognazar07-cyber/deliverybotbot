@@ -170,6 +170,11 @@ class AppStrings {
     },
     'updateNow': {'ru': 'Обновить сейчас', 'ro': 'Actualizează acum', 'en': 'Update now'},
     'later': {'ru': 'Позже', 'ro': 'Mai târziu', 'en': 'Later'},
+    'orderClosedNotifBody': {
+      'ru': 'Статус заказа изменился — откройте приложение',
+      'ro': 'Statusul comenzii s-a schimbat — deschideți aplicația',
+      'en': 'Order status changed — open the app',
+    },
   };
 
   String _get(String key) => _table[key]?[lang] ?? _table[key]?['ru'] ?? key;
@@ -227,6 +232,7 @@ class AppStrings {
   String get updateAvailableTitle => _get('updateAvailableTitle');
   String get updateNow => _get('updateNow');
   String get later => _get('later');
+  String get orderClosedNotifBody => _get('orderClosedNotifBody');
 
   String statusLabel(String status) {
     switch (status) {

@@ -100,6 +100,11 @@ class AppStrings {
     },
     'updateNow': {'ru': 'Обновить сейчас', 'ro': 'Actualizează acum', 'en': 'Update now'},
     'later': {'ru': 'Позже', 'ro': 'Mai târziu', 'en': 'Later'},
+    'newOrderNotifBody': {
+      'ru': 'Доступен новый заказ — откройте приложение',
+      'ro': 'O comandă nouă este disponibilă — deschideți aplicația',
+      'en': 'A new order is available — open the app',
+    },
   };
 
   String _get(String key) => _table[key]?[lang] ?? _table[key]?['ru'] ?? key;
@@ -153,6 +158,7 @@ class AppStrings {
   String get updateAvailableTitle => _get('updateAvailableTitle');
   String get updateNow => _get('updateNow');
   String get later => _get('later');
+  String get newOrderNotifBody => _get('newOrderNotifBody');
 
   String cargoLabel(String cargoType) => cargoType == 'freight' ? _get('cargoFreight') : _get('cargoStandard');
 

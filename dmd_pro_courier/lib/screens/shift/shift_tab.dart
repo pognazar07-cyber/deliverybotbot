@@ -30,6 +30,7 @@ class _ShiftTabState extends State<ShiftTab> {
   List<CourierOrder> _available = [];
   String? _error;
   Timer? _poll;
+  Set<int> _knownOrderIds = {};
 
   @override
   void initState() {
@@ -61,6 +62,7 @@ class _ShiftTabState extends State<ShiftTab> {
         _online = status.isOnline;
         _activeOrder = active;
         _available = available;
+        _knownOrderIds = available.map((o) => o.id).toSet();
       });
     } catch (e) {
       if (!mounted) return;
@@ -85,9 +87,15 @@ class _ShiftTabState extends State<ShiftTab> {
       if (_online) {
         final available = await _api.getAvailableOrders(widget.courierId);
         if (!mounted) return;
+        final newIds = available.map((o) => o.id).toSet().difference(_knownOrderIds);
+        if (newIds.isNotEmpty) {
+          final s = AppStrings(widget.lang);
+          DmdNotifications.show(title: s.appName, body: s.newOrderNotifBody);
+        }
         setState(() {
           _activeOrder = null;
           _available = available;
+          _knownOrderIds = available.map((o) => o.id).toSet();
         });
       } else if (_activeOrder != null) {
         setState(() => _activeOrder = null);
