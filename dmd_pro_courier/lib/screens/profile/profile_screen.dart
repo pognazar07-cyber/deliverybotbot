@@ -1,6 +1,11 @@
+import 'package:dmd_design/dmd_design.dart';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../config.dart';
 import '../../l10n/strings.dart';
+import '../../services/api_service.dart';
 import '../../services/storage_service.dart';
 import '../onboarding/language_screen.dart';
 
@@ -16,10 +21,13 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final _storage = StorageService();
+  final _api = ApiService();
 
   String? _profileId;
   String? _username;
   String? _name;
+  String? _currentVersion;
+  bool _checkingUpdate = false;
 
   @override
   void initState() {
@@ -31,12 +39,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final profileId = await _storage.getOrCreateProfileId();
     final username = await _storage.getTelegramUsername();
     final name = await _storage.getTelegramName();
+    final packageInfo = await PackageInfo.fromPlatform();
     if (!mounted) return;
     setState(() {
       _profileId = profileId;
       _username = username;
       _name = name;
+      _currentVersion = packageInfo.version;
     });
+  }
+
+  Future<void> _checkForUpdates() async {
+    final s = AppStrings(widget.lang);
+    setState(() => _checkingUpdate = true);
+    try {
+      final info = await _api.checkForUpdate(widget.lang);
+      if (!mounted) return;
+      if (!isDmdVersionNewer(latest: info.latestVersion, current: _currentVersion ?? '0')) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.upToDate)));
+        return;
+      }
+      await showDmdUpdateDialog(
+        context,
+        info: info,
+        title: s.updateAvailableTitle,
+        updateNowLabel: s.updateNow,
+        laterLabel: s.later,
+        onUpdateNow: () => launchUrl(
+          Uri.parse('${AppConfig.apiBaseUrl}${info.apkUrl}'),
+          mode: LaunchMode.externalApplication,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => _checkingUpdate = false);
+    }
   }
 
   Future<void> _logout() async {
@@ -70,6 +109,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
               leading: const Icon(Icons.badge_outlined),
               title: Text(s.profileIdLabel),
               subtitle: Text(_profileId ?? '—', style: const TextStyle(fontFamily: 'monospace')),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.system_update_outlined),
+              title: Text(s.checkUpdates),
+              subtitle: _currentVersion != null ? Text('${s.currentVersion} ${_currentVersion!}') : null,
+              trailing: _checkingUpdate
+                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.chevron_right),
+              onTap: _checkingUpdate ? null : _checkForUpdates,
             ),
           ),
           const SizedBox(height: 24),

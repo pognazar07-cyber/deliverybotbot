@@ -1,6 +1,6 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+
+import 'api_service.dart';
 
 class RouteQuote {
   final double distanceKm;
@@ -9,50 +9,50 @@ class RouteQuote {
   const RouteQuote({required this.distanceKm, required this.price});
 }
 
-/// Mirrors bot.py's get_osrm_data() (public OSRM router) and the price
-/// formula used in process_confirm_order / handle_create_order_api:
-///   rate = 10 (standard) or 20 (freight) MDL/km
-///   price = round(dist_km * rate + 40, 2), floored at 60 MDL.
+/// Gets distance + price for a route from the backend's /api/quote, which
+/// runs the exact same OSRM lookup + formula the order will actually be
+/// charged with (bot.py's calculate_price()) — so the preview always
+/// matches what gets billed, and there's one source of truth instead of
+/// the app guessing with its own copy of the formula.
 class PricingService {
-  static const double standardRatePerKm = 10;
-  static const double freightRatePerKm = 20;
-  static const double baseFare = 40;
-  static const double minimumPrice = 60;
+  final ApiService _api;
+
+  PricingService({ApiService? api}) : _api = api ?? ApiService();
+
+  // Same constants as the backend, used only as an offline fallback so the
+  // UI never gets stuck if the server is briefly unreachable.
+  static const double _standardRatePerKm = 10;
+  static const double _freightRatePerKm = 20;
+  static const double _baseFare = 40;
+  static const double _minimumPrice = 60;
 
   Future<RouteQuote> quote({
     required LatLng pointA,
     required LatLng pointB,
     required String cargoType,
   }) async {
-    final distanceKm = await _fetchDistanceKm(pointA, pointB);
-    final rate = cargoType == 'freight' ? freightRatePerKm : standardRatePerKm;
-    var price = (distanceKm * rate + baseFare);
-    price = double.parse(price.toStringAsFixed(2));
-    if (price < minimumPrice) price = minimumPrice;
-    return RouteQuote(distanceKm: distanceKm, price: price);
+    try {
+      final result = await _api.getQuote(
+        cargoType: cargoType,
+        latA: pointA.latitude,
+        lonA: pointA.longitude,
+        latB: pointB.latitude,
+        lonB: pointB.longitude,
+      );
+      return RouteQuote(distanceKm: result.distanceKm, price: result.price);
+    } catch (_) {
+      return _offlineFallback(pointA, pointB, cargoType);
+    }
   }
 
-  Future<double> _fetchDistanceKm(LatLng a, LatLng b) async {
-    final uri = Uri.parse(
-      'https://router.project-osrm.org/route/v1/driving/'
-      '${a.longitude},${a.latitude};${b.longitude},${b.latitude}'
-      '?overview=false&geometries=geojson',
-    );
-    try {
-      final resp = await http.get(uri).timeout(const Duration(seconds: 10));
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final routes = data['routes'] as List?;
-        if (routes != null && routes.isNotEmpty) {
-          final meters = (routes[0]['distance'] as num).toDouble();
-          return double.parse((meters / 1000).toStringAsFixed(2));
-        }
-      }
-    } catch (_) {
-      // Falls through to the straight-line fallback below.
-    }
-    // Fallback so the UI never gets stuck if OSRM is briefly unreachable.
+  RouteQuote _offlineFallback(LatLng pointA, LatLng pointB, String cargoType) {
     const haversine = Distance();
-    return double.parse((haversine.as(LengthUnit.Kilometer, a, b)).toStringAsFixed(2));
+    final distanceKm = double.parse(
+      haversine.as(LengthUnit.Kilometer, pointA, pointB).toStringAsFixed(2),
+    );
+    final rate = cargoType == 'freight' ? _freightRatePerKm : _standardRatePerKm;
+    var price = double.parse((distanceKm * rate + _baseFare).toStringAsFixed(2));
+    if (price < _minimumPrice) price = _minimumPrice;
+    return RouteQuote(distanceKm: distanceKm, price: price);
   }
 }

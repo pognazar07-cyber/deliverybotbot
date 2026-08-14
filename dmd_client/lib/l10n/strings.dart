@@ -152,6 +152,24 @@ class AppStrings {
       'ro': 'Completați toate câmpurile',
       'en': 'Fill in all fields',
     },
+    'checkUpdates': {
+      'ru': 'Проверить обновления',
+      'ro': 'Verifică actualizări',
+      'en': 'Check for updates',
+    },
+    'currentVersion': {'ru': 'Версия', 'ro': 'Versiune', 'en': 'Version'},
+    'upToDate': {
+      'ru': 'У вас последняя версия',
+      'ro': 'Aveți cea mai recentă versiune',
+      'en': "You're on the latest version",
+    },
+    'updateAvailableTitle': {
+      'ru': 'Доступно обновление',
+      'ro': 'Actualizare disponibilă',
+      'en': 'Update available',
+    },
+    'updateNow': {'ru': 'Обновить сейчас', 'ro': 'Actualizează acum', 'en': 'Update now'},
+    'later': {'ru': 'Позже', 'ro': 'Mai târziu', 'en': 'Later'},
   };
 
   String _get(String key) => _table[key]?[lang] ?? _table[key]?['ru'] ?? key;
@@ -203,6 +221,12 @@ class AppStrings {
   String get error => _get('error');
   String get retry => _get('retry');
   String get fillAllFields => _get('fillAllFields');
+  String get checkUpdates => _get('checkUpdates');
+  String get currentVersion => _get('currentVersion');
+  String get upToDate => _get('upToDate');
+  String get updateAvailableTitle => _get('updateAvailableTitle');
+  String get updateNow => _get('updateNow');
+  String get later => _get('later');
 
   String statusLabel(String status) {
     switch (status) {

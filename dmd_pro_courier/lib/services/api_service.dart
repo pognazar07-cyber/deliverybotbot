@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:dmd_design/dmd_design.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
@@ -203,5 +204,12 @@ class ApiService {
       completedThisMonth: body['completed_this_month'] as int,
       orders: list.map((e) => CourierOrder.fromJson(e as Map<String, dynamic>)).toList(),
     );
+  }
+
+  /// GET /api/app-update
+  Future<DmdAppUpdateInfo> checkForUpdate(String lang) async {
+    final resp = await _client.get(_uri('/api/app-update')).timeout(const Duration(seconds: 15));
+    final body = _decode(resp);
+    return DmdAppUpdateInfo.fromJson(body, lang);
   }
 }

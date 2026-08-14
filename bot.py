@@ -724,6 +724,16 @@ async def get_osrm_data(lat1, lon1, lat2, lon2):
 
     return round(dist_km, 2), map_url
 
+
+def calculate_price(dist_km, cargo_type):
+    """ Единая формула цены — используется и в Telegram-флоу заказа, и в
+    /api/quote и /api/orders, чтобы приложение и бот всегда считали одинаково. """
+    rate = 10 if cargo_type == 'standard' else 20
+    price = round((dist_km * rate) + 40, 2)
+    if price < 60:
+        price = 60.0
+    return price
+
 # --- HTTP СЕРВЕР И REST API ДЛЯ ANDROID ПРИЛОЖЕНИЯ ---
 
 async def handle_ping(request):
@@ -1505,6 +1515,32 @@ async def handle_delete_account_api(request):
             "error": str(e)
         }, status=400)
 
+async def handle_quote_api(request):
+    """ API: расчёт расстояния и цены по маршруту — той же формулой, что и
+    сам расчёт заказа (calculate_price), чтобы превью цены в приложении
+    всегда совпадало с тем, что реально спишется при оформлении. """
+    try:
+        data = await request.json()
+        cargo_type = str(data['cargo_type'])
+        lat_a = float(data['lat_a'])
+        lon_a = float(data['lon_a'])
+        lat_b = float(data['lat_b'])
+        lon_b = float(data['lon_b'])
+
+        dist_km, _ = await get_osrm_data(lat_a, lon_a, lat_b, lon_b)
+        price = calculate_price(dist_km, cargo_type)
+
+        return web.json_response({
+            "success": True,
+            "distance_km": dist_km,
+            "price": price,
+            "error": None
+        })
+    except Exception as e:
+        logging.error(f"Error in handle_quote_api: {e}")
+        return web.json_response({"success": False, "distance_km": None, "price": None, "error": str(e)}, status=400)
+
+
 async def handle_create_order_api(request):
     """ API для Android: Создание нового заказа """
     try:
@@ -1518,8 +1554,13 @@ async def handle_create_order_api(request):
         phone_sender = str(data['phone_sender'])
         phone_receiver = str(data['phone_receiver'])
         comment = str(data.get('comment', ''))
-        price = float(data['price'])
-        
+
+        # Price is always computed here, never trusted from the client —
+        # matches the Telegram order flow so both interfaces charge the
+        # same route the same way.
+        dist_km, _ = await get_osrm_data(lat_a, lon_a, lat_b, lon_b)
+        price = calculate_price(dist_km, cargo_type)
+
         async with db_pool.acquire() as conn:
             order_id = await conn.fetchval("""
                 INSERT INTO orders (
@@ -2319,9 +2360,7 @@ async def skip_comment(message: Message, state: FSMContext):
 
     dist_km, map_url = await get_osrm_data(data['lat_a'], data['lon_a'], data['lat_b'], data['lon_b'])
 
-    rate = 10 if data['cargo_type'] == 'standard' else 20
-    price = round((dist_km * rate) + 40, 2)
-    if price < 60: price = 60.0
+    price = calculate_price(dist_km, data['cargo_type'])
 
     comment = "Нет комментария"
     await state.update_data(comment=comment, price=price, map_url=map_url)
@@ -2348,9 +2387,7 @@ async def process_comment(message: Message, state: FSMContext):
 
     dist_km, map_url = await get_osrm_data(data['lat_a'], data['lon_a'], data['lat_b'], data['lon_b'])
 
-    rate = 10 if data['cargo_type'] == 'standard' else 20
-    price = round((dist_km * rate) + 40, 2)
-    if price < 60: price = 60.0
+    price = calculate_price(dist_km, data['cargo_type'])
 
     await state.update_data(comment=comment, price=price, map_url=map_url)
     
@@ -2688,6 +2725,7 @@ async def main():
     app.router.add_post("/admin/upload", handle_admin_upload)
     app.router.add_post("/api/verify", handle_verify_api)  # Метод проверки 6-значного кода
     app.router.add_post("/api/delete-account/{profileId}", handle_delete_account_api) # Метод удаления профиля
+    app.router.add_post("/api/quote", handle_quote_api)
     app.router.add_post("/api/orders", handle_create_order_api)
     app.router.add_get("/api/orders/active/{clientId}", handle_get_active_order_api)
     app.router.add_post("/api/orders/{id}/cancel", handle_cancel_order_api)

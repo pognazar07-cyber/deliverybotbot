@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:dmd_design/dmd_design.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
@@ -20,22 +21,6 @@ class VerifyResult {
     required this.telegramId,
     required this.telegramUsername,
     required this.telegramName,
-  });
-}
-
-class AppUpdateInfo {
-  final String latestVersion;
-  final String updateMessage;
-  final bool forceUpdate;
-  final List<String> newFeatures;
-  final String apkUrl;
-
-  const AppUpdateInfo({
-    required this.latestVersion,
-    required this.updateMessage,
-    required this.forceUpdate,
-    required this.newFeatures,
-    required this.apkUrl,
   });
 }
 
@@ -83,6 +68,36 @@ class ApiService {
         .post(_uri('/api/delete-account/$profileId'))
         .timeout(const Duration(seconds: 15));
     _decode(resp);
+  }
+
+  /// POST /api/quote — server-authoritative distance + price for a route,
+  /// computed with the exact same formula the order will actually be
+  /// charged with (see bot.py's calculate_price()).
+  Future<({double distanceKm, double price})> getQuote({
+    required String cargoType,
+    required double latA,
+    required double lonA,
+    required double latB,
+    required double lonB,
+  }) async {
+    final resp = await _client
+        .post(
+          _uri('/api/quote'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'cargo_type': cargoType,
+            'lat_a': latA,
+            'lon_a': lonA,
+            'lat_b': latB,
+            'lon_b': lonB,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    final body = _decode(resp);
+    return (
+      distanceKm: (body['distance_km'] as num).toDouble(),
+      price: (body['price'] as num).toDouble(),
+    );
   }
 
   /// POST /api/orders
@@ -183,16 +198,9 @@ class ApiService {
   }
 
   /// GET /api/app-update
-  Future<AppUpdateInfo> checkForUpdate(String lang) async {
+  Future<DmdAppUpdateInfo> checkForUpdate(String lang) async {
     final resp = await _client.get(_uri('/api/app-update')).timeout(const Duration(seconds: 15));
     final body = _decode(resp);
-    final messageKey = 'update_message_$lang';
-    return AppUpdateInfo(
-      latestVersion: body['latest_version'] as String? ?? '',
-      updateMessage: body[messageKey] as String? ?? body['update_message_ru'] as String? ?? '',
-      forceUpdate: body['force_update'] as bool? ?? false,
-      newFeatures: (body['new_features'] as List? ?? []).cast<String>(),
-      apkUrl: body['apk_url'] as String? ?? '/api/download-apk',
-    );
+    return DmdAppUpdateInfo.fromJson(body, lang);
   }
 }
