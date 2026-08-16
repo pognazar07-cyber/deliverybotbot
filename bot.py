@@ -895,6 +895,17 @@ def _parse_route(row):
 async def handle_ping(request):
     return web.Response(text="Keep Alive OK", status=200)
 
+
+async def handle_landing_page(request):
+    """ Публичный лендинг DeliveryMD (website/index.html рядом с bot.py). """
+    website_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "website", "index.html")
+    try:
+        with open(website_path, "r", encoding="utf-8") as f:
+            return web.Response(text=f.read(), content_type="text/html")
+    except FileNotFoundError:
+        return web.Response(text="DeliveryMD", content_type="text/html")
+
+
 def get_config_path():
     import os
     if os.path.isdir("/data") and os.access("/data", os.W_OK):
@@ -2898,7 +2909,11 @@ async def main():
     app = web.Application()
     
     # Регистрация REST API роутов для работы Android-приложения
-    app.router.add_get("/", handle_ping)
+    app.router.add_get("/", handle_landing_page)
+    app.router.add_get("/ping", handle_ping)
+    apk_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dmdapk")
+    if os.path.isdir(apk_dir):
+        app.router.add_static("/dmdapk", path=apk_dir, show_index=False)
     app.router.add_get("/api/app-update", handle_app_update_api)
     app.router.add_get("/api/download-apk", handle_download_apk_api)
     app.router.add_get("/admin/upload", handle_admin_panel)
