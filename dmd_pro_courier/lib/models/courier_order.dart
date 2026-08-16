@@ -1,4 +1,5 @@
 import 'package:dmd_design/dmd_design.dart';
+import 'package:latlong2/latlong.dart';
 
 /// Mirrors the order DTO returned by bot.py's courier API (_order_dto()).
 /// phoneSender/phoneReceiver are only populated once the order is accepted
@@ -15,6 +16,7 @@ class CourierOrder {
   final String status; // pending | accepted | at_a | at_b | completed
   final String? phoneSender;
   final String? phoneReceiver;
+  final List<LatLng> route; // real road route from OSRM; empty if unavailable
 
   const CourierOrder({
     required this.id,
@@ -28,6 +30,7 @@ class CourierOrder {
     required this.status,
     this.phoneSender,
     this.phoneReceiver,
+    this.route = const [],
   });
 
   factory CourierOrder.fromJson(Map<String, dynamic> json) {
@@ -43,7 +46,15 @@ class CourierOrder {
       status: json['status'] as String,
       phoneSender: json['phone_sender'] as String?,
       phoneReceiver: json['phone_receiver'] as String?,
+      route: _parseRoute(json['route']),
     );
+  }
+
+  static List<LatLng> _parseRoute(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .map((p) => LatLng((p[0] as num).toDouble(), (p[1] as num).toDouble()))
+        .toList();
   }
 
   /// The status this order will move to when the courier taps the primary
@@ -60,4 +71,21 @@ class CourierOrder {
         'completed' => DmdStatusKind.success,
         _ => DmdStatusKind.pending,
       };
+
+  CourierOrder copyWith({String? status}) {
+    return CourierOrder(
+      id: id,
+      cargoType: cargoType,
+      latA: latA,
+      lonA: lonA,
+      latB: latB,
+      lonB: lonB,
+      comment: comment,
+      price: price,
+      status: status ?? this.status,
+      phoneSender: phoneSender,
+      phoneReceiver: phoneReceiver,
+      route: route,
+    );
+  }
 }

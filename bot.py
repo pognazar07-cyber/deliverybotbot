@@ -1,6 +1,7 @@
 import os
 import asyncio
 import base64
+import json
 import logging
 import random
 from datetime import datetime, timedelta
@@ -336,6 +337,13 @@ async def init_db():
                 courier_id BIGINT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+        """)
+
+        # Миграция: геометрия маршрута (JSON [[lat,lon],...] от своего OSRM),
+        # чтобы приложения рисовали реальный маршрут по дорогам, а не прямую
+        # линию А→Б.
+        await conn.execute("""
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS route_geometry TEXT;
         """)
 
         # Техподдержка
@@ -826,29 +834,39 @@ async def _osrm_idle_watcher():
 
 
 async def get_osrm_data(lat1, lon1, lat2, lon2):
+    """ Возвращает (dist_km, map_url, route_geometry_json).
+    route_geometry_json — JSON-массив [[lat, lon], ...] реального маршрута
+    по дорогам (для отрисовки на карте в приложениях), либо "[]", если
+    OSRM недоступен — в этом случае приложения просто рисуют прямую
+    линию А→Б как раньше. """
     # OpenStreetMap URL for driving route using OSRM engine
     map_url = f"https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route={lat1},{lon1};{lat2},{lon2}"
 
     dist_km = 5.0
+    route_geometry = []
     try:
         await ensure_osrm_started()
         osrm_api = (
             f"{OSRM_LOCAL_URL}/route/v1/driving/"
             f"{lon1},{lat1};{lon2},{lat2}"
-            f"?overview=false&geometries=geojson"
+            f"?overview=simplified&geometries=geojson"
         )
         async with aiohttp.ClientSession() as session:
             async with session.get(osrm_api, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 data = await resp.json()
                 if data.get("routes"):
                     dist_km = data["routes"][0]["distance"] / 1000
+                    # GeoJSON coordinates are [lon, lat] — flip to [lat, lon]
+                    # to match every other lat/lon field in this API.
+                    coords = data["routes"][0]["geometry"]["coordinates"]
+                    route_geometry = [[c[1], c[0]] for c in coords]
                 else:
                     await _alert_osrm_fallback(lat1, lon1, lat2, lon2, "маршрут не найден")
     except Exception as e:
         logging.error(f"Routing distance fetch error: {e}")
         await _alert_osrm_fallback(lat1, lon1, lat2, lon2, str(e))
 
-    return round(dist_km, 2), map_url
+    return round(dist_km, 2), map_url, json.dumps(route_geometry)
 
 
 def calculate_price(dist_km, cargo_type):
@@ -859,6 +877,18 @@ def calculate_price(dist_km, cargo_type):
     if price < 60:
         price = 60.0
     return price
+
+
+def _parse_route(row):
+    """ Безопасно достаёт [[lat, lon], ...] из orders.route_geometry.
+    Заказы, созданные до этой миграции, или те, для которых OSRM был
+    недоступен в момент создания, просто вернут пустой список — приложения
+    в этом случае рисуют прямую линию А→Б как раньше. """
+    try:
+        raw = row['route_geometry']
+        return json.loads(raw) if raw else []
+    except Exception:
+        return []
 
 # --- HTTP СЕРВЕР И REST API ДЛЯ ANDROID ПРИЛОЖЕНИЯ ---
 
@@ -1668,7 +1698,7 @@ async def handle_quote_api(request):
                 "error": "Сервис карты запускается, повторите через несколько секунд"
             }, status=503)
 
-        dist_km, _ = await get_osrm_data(lat_a, lon_a, lat_b, lon_b)
+        dist_km, _, route_geometry_json = await get_osrm_data(lat_a, lon_a, lat_b, lon_b)
         price = calculate_price(dist_km, cargo_type)
 
         return web.json_response({
@@ -1676,6 +1706,7 @@ async def handle_quote_api(request):
             "warming_up": False,
             "distance_km": dist_km,
             "price": price,
+            "route": json.loads(route_geometry_json),
             "error": None
         })
     except Exception as e:
@@ -1702,19 +1733,19 @@ async def handle_create_order_api(request):
         # Price is always computed here, never trusted from the client —
         # matches the Telegram order flow so both interfaces charge the
         # same route the same way.
-        dist_km, _ = await get_osrm_data(lat_a, lon_a, lat_b, lon_b)
+        dist_km, _, route_geometry_json = await get_osrm_data(lat_a, lon_a, lat_b, lon_b)
         price = calculate_price(dist_km, cargo_type)
 
         async with db_pool.acquire() as conn:
             order_id = await conn.fetchval("""
                 INSERT INTO orders (
-                    client_id, cargo_type, addr_a, addr_b, lat_a, lon_a, lat_b, lon_b, 
-                    phone_sender, phone_receiver, comment, price, status
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')
+                    client_id, cargo_type, addr_a, addr_b, lat_a, lon_a, lat_b, lon_b,
+                    phone_sender, phone_receiver, comment, price, status, route_geometry
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', $13)
                 RETURNING id
-            """, 
+            """,
             client_id, cargo_type, "Точка А (Локация)", "Точка Б (Локация)",
-            lat_a, lon_a, lat_b, lon_b, phone_sender, phone_receiver, comment, price)
+            lat_a, lon_a, lat_b, lon_b, phone_sender, phone_receiver, comment, price, route_geometry_json)
             
             online_couriers = await conn.fetch(
                 "SELECT user_id, lang FROM users WHERE role = 'courier' AND is_online = TRUE AND is_approved = TRUE"
@@ -1788,9 +1819,10 @@ async def handle_get_active_order_api(request):
             "courier_id": row['courier_id'],
             "courier_name": row['courier_name'],
             "courier_lat": float(row['last_lat']) if row['last_lat'] is not None else None,
-            "courier_lon": float(row['last_lon']) if row['last_lon'] is not None else None
+            "courier_lon": float(row['last_lon']) if row['last_lon'] is not None else None,
+            "route": _parse_route(row)
         }
-        
+
         return web.json_response({
             "success": True,
             "order": order_dto,
@@ -1865,7 +1897,8 @@ async def handle_get_order_history_api(request):
                 "courier_id": row['courier_id'],
                 "courier_name": row['courier_name'],
                 "courier_lat": None,
-                "courier_lon": None
+                "courier_lon": None,
+                "route": _parse_route(row)
             })
             
         return web.json_response({
@@ -1980,6 +2013,7 @@ def _order_dto(row, include_contacts):
         "comment": row["comment"],
         "price": float(row["price"]),
         "status": row["status"],
+        "route": _parse_route(row),
     }
     if include_contacts:
         dto["phone_sender"] = row["phone_sender"]
@@ -2502,12 +2536,12 @@ async def skip_comment(message: Message, state: FSMContext):
     lang = await get_lang(message.from_user.id)
     data = await state.get_data()
 
-    dist_km, map_url = await get_osrm_data(data['lat_a'], data['lon_a'], data['lat_b'], data['lon_b'])
+    dist_km, map_url, route_geometry_json = await get_osrm_data(data['lat_a'], data['lon_a'], data['lat_b'], data['lon_b'])
 
     price = calculate_price(dist_km, data['cargo_type'])
 
     comment = "Нет комментария"
-    await state.update_data(comment=comment, price=price, map_url=map_url)
+    await state.update_data(comment=comment, price=price, map_url=map_url, route_geometry_json=route_geometry_json)
 
     c_type_str = "📦 Стандарт" if data['cargo_type'] == 'standard' else "🚚 Грузовой"
     text = TEXTS[lang]['confirm_title'].format(
@@ -2529,11 +2563,11 @@ async def process_comment(message: Message, state: FSMContext):
     comment = message.text if message.text.lower() != '/skip' else "Нет комментария"
     data = await state.get_data()
 
-    dist_km, map_url = await get_osrm_data(data['lat_a'], data['lon_a'], data['lat_b'], data['lon_b'])
+    dist_km, map_url, route_geometry_json = await get_osrm_data(data['lat_a'], data['lon_a'], data['lat_b'], data['lon_b'])
 
     price = calculate_price(dist_km, data['cargo_type'])
 
-    await state.update_data(comment=comment, price=price, map_url=map_url)
+    await state.update_data(comment=comment, price=price, map_url=map_url, route_geometry_json=route_geometry_json)
     
     c_type_str = "📦 Стандарт" if data['cargo_type'] == 'standard' else "🚚 Грузовой"
     text = TEXTS[lang]['confirm_title'].format(
@@ -2557,14 +2591,15 @@ async def process_order_confirm_yes(callback: CallbackQuery, state: FSMContext):
     async with db_pool.acquire() as conn:
         order_id = await conn.fetchval("""
             INSERT INTO orders (
-                client_id, cargo_type, addr_a, addr_b, lat_a, lon_a, lat_b, lon_b, 
-                phone_sender, phone_receiver, comment, price, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')
+                client_id, cargo_type, addr_a, addr_b, lat_a, lon_a, lat_b, lon_b,
+                phone_sender, phone_receiver, comment, price, status, route_geometry
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', $13)
             RETURNING id
-        """, 
+        """,
         callback.from_user.id, data['cargo_type'], "Точка А (Локация)", "Точка Б (Локация)",
         data['lat_a'], data['lon_a'], data['lat_b'], data['lon_b'],
-        data['phone_sender'], data['phone_receiver'], data['comment'], data['price'])
+        data['phone_sender'], data['phone_receiver'], data['comment'], data['price'],
+        data.get('route_geometry_json', '[]'))
         
         online_couriers = await conn.fetch(
             "SELECT user_id, lang FROM users WHERE role = 'courier' AND is_online = TRUE AND is_approved = TRUE"
@@ -2720,7 +2755,7 @@ async def cb_courier_take_order(callback: CallbackQuery):
         await callback.answer("Заказ уже взят другим курьером", show_alert=True)
         return
 
-    _, map_url = await get_osrm_data(float(order["lat_a"]), float(order["lon_a"]), float(order["lat_b"]), float(order["lon_b"]))
+    _, map_url, _ = await get_osrm_data(float(order["lat_a"]), float(order["lon_a"]), float(order["lat_b"]), float(order["lon_b"]))
 
     text = TEXTS[lang]['order_taken'].format(
         p_send=order['phone_sender'], p_recv=order['phone_receiver'], comm=order['comment'], url=map_url

@@ -10,4 +10,5 @@ export 'src/theme.dart';
 export 'src/update_info.dart';
 export 'src/widgets/status_chip.dart';
 export 'src/widgets/empty_state.dart';
+export 'src/widgets/live_location_dot.dart';
 export 'src/widgets/update_dialog.dart';

@@ -105,7 +105,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                   userAgentPackageName: 'com.deliverymd.dmd_client',
                 ),
                 PolylineLayer(polylines: [
-                  Polyline(points: [pointA, pointB], strokeWidth: 3, color: Colors.blueAccent),
+                  Polyline(
+                    points: _order.route.isNotEmpty ? _order.route : [pointA, pointB],
+                    strokeWidth: 4,
+                    color: Colors.blueAccent,
+                  ),
                 ]),
                 MarkerLayer(markers: [
                   Marker(
@@ -123,9 +127,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                   if (_order.courierLat != null && _order.courierLon != null)
                     Marker(
                       point: LatLng(_order.courierLat!, _order.courierLon!),
-                      width: 40,
-                      height: 40,
-                      child: const Icon(Icons.two_wheeler, color: Colors.deepOrange, size: 34),
+                      width: 48,
+                      height: 48,
+                      child: const DmdLiveLocationDot(),
                     ),
                 ]),
               ],

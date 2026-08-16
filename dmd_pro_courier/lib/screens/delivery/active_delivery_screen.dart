@@ -78,21 +78,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
         widget.onOrderClosed();
         return;
       }
-      setState(() {
-        _order = CourierOrder(
-          id: _order.id,
-          cargoType: _order.cargoType,
-          latA: _order.latA,
-          lonA: _order.lonA,
-          latB: _order.latB,
-          lonB: _order.lonB,
-          comment: _order.comment,
-          price: _order.price,
-          status: next,
-          phoneSender: _order.phoneSender,
-          phoneReceiver: _order.phoneReceiver,
-        );
-      });
+      setState(() => _order = _order.copyWith(status: next));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
@@ -132,7 +118,11 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
                   userAgentPackageName: 'com.deliverymd.dmd_pro_courier',
                 ),
                 PolylineLayer(polylines: [
-                  Polyline(points: [pointA, pointB], strokeWidth: 3, color: Colors.deepOrange),
+                  Polyline(
+                    points: _order.route.isNotEmpty ? _order.route : [pointA, pointB],
+                    strokeWidth: 4,
+                    color: Colors.deepOrange,
+                  ),
                 ]),
                 MarkerLayer(markers: [
                   Marker(

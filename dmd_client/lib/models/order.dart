@@ -1,4 +1,5 @@
 import 'package:dmd_design/dmd_design.dart';
+import 'package:latlong2/latlong.dart';
 
 /// Mirrors the order DTO returned by the bot's REST API
 /// (handle_get_active_order_api / handle_get_order_history_api in bot.py).
@@ -18,6 +19,7 @@ class DeliveryOrder {
   final String? courierName;
   final double? courierLat;
   final double? courierLon;
+  final List<LatLng> route; // real road route from OSRM; empty if unavailable
 
   const DeliveryOrder({
     required this.id,
@@ -35,6 +37,7 @@ class DeliveryOrder {
     this.courierName,
     this.courierLat,
     this.courierLon,
+    this.route = const [],
   });
 
   factory DeliveryOrder.fromJson(Map<String, dynamic> json) {
@@ -54,7 +57,15 @@ class DeliveryOrder {
       courierName: json['courier_name'] as String?,
       courierLat: (json['courier_lat'] as num?)?.toDouble(),
       courierLon: (json['courier_lon'] as num?)?.toDouble(),
+      route: _parseRoute(json['route']),
     );
+  }
+
+  static List<LatLng> _parseRoute(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .map((p) => LatLng((p[0] as num).toDouble(), (p[1] as num).toDouble()))
+        .toList();
   }
 
   bool get isActive =>
