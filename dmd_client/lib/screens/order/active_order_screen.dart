@@ -37,7 +37,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   void initState() {
     super.initState();
     _order = widget.initialOrder;
-    _poll = Timer.periodic(const Duration(seconds: 6), (_) => _refresh());
+    // Matches the courier app's 3s location-report cadence — polling slower
+    // than that would just add latency on top of an already-fresh position.
+    _poll = Timer.periodic(const Duration(seconds: 4), (_) => _refresh());
   }
 
   Future<void> _refresh() async {

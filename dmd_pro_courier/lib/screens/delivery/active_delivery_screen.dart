@@ -40,7 +40,9 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
   void initState() {
     super.initState();
     _order = widget.initialOrder;
-    _locationTimer = Timer.periodic(const Duration(seconds: 15), (_) => _reportLocation());
+    // Navigator-style cadence: frequent enough that the client's blue dot
+    // reads as continuous movement rather than periodic jumps.
+    _locationTimer = Timer.periodic(const Duration(seconds: 3), (_) => _reportLocation());
     _reportLocation();
   }
 
