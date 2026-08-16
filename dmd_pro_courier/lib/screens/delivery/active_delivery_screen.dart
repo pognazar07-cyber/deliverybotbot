@@ -34,6 +34,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
   late CourierOrder _order;
   bool _advancing = false;
   Timer? _locationTimer;
+  LatLng? _myPosition;
 
   @override
   void initState() {
@@ -55,6 +56,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
         return;
       }
       final pos = await Geolocator.getCurrentPosition();
+      if (mounted) setState(() => _myPosition = LatLng(pos.latitude, pos.longitude));
       await _api.reportLocation(telegramId: widget.courierId, lat: pos.latitude, lon: pos.longitude);
     } catch (_) {
       // Best-effort — a missed location ping isn't worth surfacing to the courier.
@@ -139,6 +141,13 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
                     child: Icon(Icons.flag,
                         color: destination == pointB ? Colors.deepOrange : Colors.grey, size: 32),
                   ),
+                  if (_myPosition != null)
+                    Marker(
+                      point: _myPosition!,
+                      width: 48,
+                      height: 48,
+                      child: const DmdLiveLocationDot(color: Color(0xFFE8720C)),
+                    ),
                 ]),
               ],
             ),

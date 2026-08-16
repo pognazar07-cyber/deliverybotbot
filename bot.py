@@ -1750,6 +1750,19 @@ async def handle_create_order_api(request):
         phone_receiver = str(data['phone_receiver'])
         comment = str(data.get('comment', ''))
 
+        # Same cold-start protection as /api/quote: if the map service needs
+        # to be woken up, fail fast instead of risking the client's timeout
+        # racing ensure_osrm_started() (which can take up to 20s).
+        if not await _osrm_health_check():
+            if not await osrm_is_warming_up():
+                asyncio.create_task(ensure_osrm_started())
+            return web.json_response({
+                "success": False,
+                "warming_up": True,
+                "order_id": None,
+                "error": "Сервис карты запускается, повторите через несколько секунд"
+            }, status=503)
+
         # Price is always computed here, never trusted from the client —
         # matches the Telegram order flow so both interfaces charge the
         # same route the same way.

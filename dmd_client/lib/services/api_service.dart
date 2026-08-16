@@ -142,7 +142,12 @@ class ApiService {
           }),
         )
         .timeout(const Duration(seconds: 15));
-    final body = _decode(resp);
+
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    if (body['success'] != true) {
+      if (body['warming_up'] == true) throw const MapWarmingUpException();
+      throw ApiException(body['error'] as String? ?? 'Unknown server error');
+    }
     return body['order_id'] as int;
   }
 

@@ -92,29 +92,45 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
     setState(() {
       _submitting = true;
+      _warmingUp = false;
       _error = null;
     });
 
-    try {
-      await _api.createOrder(
-        clientId: widget.clientId,
-        cargoType: _cargoType,
-        latA: _pointA!.point.latitude,
-        lonA: _pointA!.point.longitude,
-        latB: _pointB!.point.latitude,
-        lonB: _pointB!.point.longitude,
-        phoneSender: _phoneSenderCtrl.text.trim(),
-        phoneReceiver: _phoneReceiverCtrl.text.trim(),
-        comment: _commentCtrl.text.trim(),
-        price: _quote!.price,
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _submitting = false);
+    // The map service may have gone idle between quoting and confirming —
+    // same retry pattern as PricingService.quote() instead of letting the
+    // request block server-side until it might outrun our HTTP timeout.
+    const maxAttempts = 6;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        await _api.createOrder(
+          clientId: widget.clientId,
+          cargoType: _cargoType,
+          latA: _pointA!.point.latitude,
+          lonA: _pointA!.point.longitude,
+          latB: _pointB!.point.latitude,
+          lonB: _pointB!.point.longitude,
+          phoneSender: _phoneSenderCtrl.text.trim(),
+          phoneReceiver: _phoneReceiverCtrl.text.trim(),
+          comment: _commentCtrl.text.trim(),
+          price: _quote!.price,
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop(true);
+        return;
+      } on MapWarmingUpException {
+        if (!mounted) return;
+        setState(() => _warmingUp = true);
+        await Future.delayed(const Duration(seconds: 3));
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _error = e.toString());
+        break;
+      }
     }
+    if (mounted && _warmingUp) {
+      setState(() => _error = s.mapWarmingUp);
+    }
+    if (mounted) setState(() => _submitting = false);
   }
 
   @override
