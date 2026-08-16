@@ -734,13 +734,22 @@ async def _alert_osrm_fallback(lat1, lon1, lat2, lon2, reason):
         pass
 
 
+DOCKER_BIN = "/usr/bin/docker"  # the systemd unit restricts PATH, so "docker" alone won't resolve
+
 async def _run_docker(*args):
-    proc = await asyncio.create_subprocess_exec(
-        "docker", *args,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await proc.communicate()
-    return proc.returncode, stdout.decode().strip(), stderr.decode().strip()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            DOCKER_BIN, *args,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        code, out, err = proc.returncode, stdout.decode().strip(), stderr.decode().strip()
+        if code != 0:
+            logging.error(f"docker {' '.join(args)} failed ({code}): {err}")
+        return code, out, err
+    except Exception as e:
+        logging.error(f"Failed to run docker {' '.join(args)}: {e}")
+        return -1, "", str(e)
 
 
 async def _osrm_is_running():
