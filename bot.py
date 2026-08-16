@@ -1439,7 +1439,7 @@ async def handle_admin_panel(request):
 
         function updateFileDisplay(file) {
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-            fileDisplay.innerHTML = `✓ Выбран файл: <strong>${file.name}</strong> (\${sizeMB} MB)`;
+            fileDisplay.innerHTML = `✓ Выбран файл: <strong>${file.name}</strong> (${sizeMB} MB)`;
             fileDisplay.style.display = 'block';
         }
 
@@ -1473,7 +1473,7 @@ async def handle_admin_panel(request):
                     
                     progressBar.style.width = percent + '%';
                     progressPercent.textContent = percent + '%';
-                    progressBytes.textContent = `\${loadedMB} / \${totalMB} MB`;
+                    progressBytes.textContent = `${loadedMB} / ${totalMB} MB`;
                 }
             });
 
