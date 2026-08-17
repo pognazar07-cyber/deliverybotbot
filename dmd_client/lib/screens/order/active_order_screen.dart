@@ -48,7 +48,20 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       if (!mounted) return;
       if (updated == null) {
         final s = AppStrings(widget.lang);
-        DmdNotifications.show(title: '${s.appName} · #${_order.id}', body: s.orderClosedNotifBody);
+        var body = s.orderClosedNotifBody;
+        try {
+          final history = await _api.getOrderHistory(widget.clientId);
+          for (final past in history) {
+            if (past.id == _order.id) {
+              if (past.status == 'completed') body = s.orderCompletedNotifBody;
+              if (past.status == 'cancelled') body = s.orderCancelledNotifBody;
+              break;
+            }
+          }
+        } catch (_) {
+          // Fall back to the generic message below.
+        }
+        DmdNotifications.show(title: '${s.appName} · #${_order.id}', body: body);
         widget.onOrderClosed();
         return;
       }

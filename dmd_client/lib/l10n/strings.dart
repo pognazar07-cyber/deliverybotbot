@@ -180,6 +180,16 @@ class AppStrings {
       'ro': 'Statusul comenzii s-a schimbat — deschideți aplicația',
       'en': 'Order status changed — open the app',
     },
+    'orderCompletedNotifBody': {
+      'ru': 'Заказ доставлен ✅',
+      'ro': 'Comanda a fost livrată ✅',
+      'en': 'Order delivered ✅',
+    },
+    'orderCancelledNotifBody': {
+      'ru': 'Заказ отменён',
+      'ro': 'Comanda a fost anulată',
+      'en': 'Order cancelled',
+    },
   };
 
   String _get(String key) => _table[key]?[lang] ?? _table[key]?['ru'] ?? key;
@@ -238,6 +248,8 @@ class AppStrings {
   String get updateNow => _get('updateNow');
   String get later => _get('later');
   String get orderClosedNotifBody => _get('orderClosedNotifBody');
+  String get orderCompletedNotifBody => _get('orderCompletedNotifBody');
+  String get orderCancelledNotifBody => _get('orderCancelledNotifBody');
   String get mapWarmingUp => _get('mapWarmingUp');
 
   String statusLabel(String status) {
