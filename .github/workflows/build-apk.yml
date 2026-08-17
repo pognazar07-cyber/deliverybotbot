@@ -20,6 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Write Firebase google-services.json
+        working-directory: ${{ matrix.app }}
+        run: printf '%s' '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
+
       - uses: actions/setup-java@v4
         with:
           distribution: "zulu"

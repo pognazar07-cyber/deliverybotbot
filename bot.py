@@ -41,6 +41,41 @@ dp.include_router(router)
 db_pool = None
 active_afk_tasks = {}
 
+# --- PUSH-УВЕДОМЛЕНИЯ (Firebase Cloud Messaging) ---
+# Работают, даже когда приложение полностью закрыто — в отличие от локальных
+# уведомлений внутри самих приложений, которые требуют живого процесса.
+# Без файла сервисного аккаунта пуши просто тихо отключены (best-effort).
+FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "/opt/bot/firebase-service-account.json")
+_firebase_app = None
+try:
+    import firebase_admin
+    from firebase_admin import credentials as _fb_credentials, messaging as _fb_messaging
+    if os.path.exists(FIREBASE_CREDENTIALS_PATH):
+        _firebase_app = firebase_admin.initialize_app(_fb_credentials.Certificate(FIREBASE_CREDENTIALS_PATH))
+        logging.info("Firebase Admin SDK initialized — push notifications enabled.")
+    else:
+        logging.warning(f"Firebase credentials not found at {FIREBASE_CREDENTIALS_PATH} — push notifications disabled.")
+except ImportError:
+    logging.warning("firebase-admin package not installed — push notifications disabled.")
+
+async def push_notify(token: str | None, title: str, body: str):
+    """ Best-effort push send — never raises, mirrors the try/except pattern
+    used for Telegram sends elsewhere in this file. """
+    if not _firebase_app or not token:
+        return
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: _fb_messaging.send(_fb_messaging.Message(
+            notification=_fb_messaging.Notification(title=title, body=body),
+            token=token,
+        )))
+    except Exception as e:
+        logging.error(f"Push send failed: {e}")
+
+async def _get_fcm_token(user_id: int) -> str | None:
+    async with db_pool.acquire() as conn:
+        return await conn.fetchval("SELECT fcm_token FROM users WHERE user_id = $1", user_id)
+
 # --- СОСТОЯНИЯ FSM ---
 class UserReg(StatesGroup):
     photo = State()
@@ -308,6 +343,12 @@ async def init_db():
         # курьеру отправить фото заново вместо вечного "ожидайте".
         await conn.execute("""
             ALTER TABLE users ADD COLUMN IF NOT EXISTS courier_declined BOOLEAN DEFAULT FALSE;
+        """)
+
+        # Миграция: FCM-токен устройства — для push, которые доходят даже
+        # когда приложение полностью закрыто (в отличие от локальных).
+        await conn.execute("""
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT;
         """)
 
         # Белый список
@@ -1781,9 +1822,9 @@ async def handle_create_order_api(request):
             lat_a, lon_a, lat_b, lon_b, phone_sender, phone_receiver, comment, price, route_geometry_json)
             
             online_couriers = await conn.fetch(
-                "SELECT user_id, lang FROM users WHERE role = 'courier' AND is_online = TRUE AND is_approved = TRUE"
+                "SELECT user_id, lang, fcm_token FROM users WHERE role = 'courier' AND is_online = TRUE AND is_approved = TRUE"
             )
-            
+
         c_type_str = "📦 Стандарт" if cargo_type == 'standard' else "🚚 Грузовой"
         for courier in online_couriers:
             c_lang = courier['lang']
@@ -1795,7 +1836,7 @@ async def handle_create_order_api(request):
             )
             kb_take = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
-                    text=TEXTS[c_lang]['take_btn'].format(price=f"{price:.2f}"), 
+                    text=TEXTS[c_lang]['take_btn'].format(price=f"{price:.2f}"),
                     callback_data=f"order_take_{order_id}"
                 )]
             ])
@@ -1803,7 +1844,10 @@ async def handle_create_order_api(request):
                 await bot.send_message(courier['user_id'], c_text, reply_markup=kb_take, parse_mode="Markdown")
             except Exception as e:
                 logging.error(f"Ошибка отправки заказа курьеру {courier['user_id']}: {e}")
-                
+            asyncio.create_task(push_notify(
+                courier['fcm_token'], "DMD Pro Courier", f"Новый заказ #{order_id} · {price:.2f} MDL"
+            ))
+
         return web.json_response({
             "success": True,
             "order_id": order_id,
@@ -1899,6 +1943,20 @@ async def handle_cancel_order_api(request):
             "success": False,
             "error": str(e)
         }, status=400)
+
+async def handle_push_token_api(request):
+    """ API: сохраняет/обновляет FCM-токен устройства (клиент или курьер) —
+    используется и dmd_client, и dmd_pro_courier через один и тот же роут. """
+    try:
+        data = await request.json()
+        telegram_id = int(data['telegram_id'])
+        token = str(data['token'])
+        async with db_pool.acquire() as conn:
+            await conn.execute("UPDATE users SET fcm_token = $1 WHERE user_id = $2", token, telegram_id)
+        return web.json_response({"success": True, "error": None})
+    except Exception as e:
+        logging.error(f"Error in handle_push_token_api: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=400)
 
 async def handle_get_order_history_api(request):
     """ API для Android: Получение истории заказов """
@@ -2287,6 +2345,9 @@ async def handle_courier_accept_order_api(request):
             await bot.send_message(order['client_id'], f"🤝 Ваш заказ #{order_id} принят курьером!")
         except Exception:
             pass
+        asyncio.create_task(push_notify(
+            await _get_fcm_token(order['client_id']), "DeliveryMD", f"Заказ #{order_id} принят курьером"
+        ))
 
         if order_id in active_afk_tasks:
             active_afk_tasks[order_id].cancel()
@@ -2364,8 +2425,13 @@ async def handle_courier_update_status_api(request):
             active_afk_tasks.pop(order_id, None)
 
         client_id = order['client_id']
+        cl_lang = await get_lang(client_id)
+        push_body = {
+            'at_a': TEXTS[cl_lang]['client_notif_courier_at_a'],
+            'at_b': TEXTS[cl_lang]['client_notif_courier_at_b'],
+            'completed': "Заказ доставлен — спасибо, что выбрали нас!",
+        }.get(new_status)
         try:
-            cl_lang = await get_lang(client_id)
             if new_status == 'at_a':
                 await bot.send_message(client_id, TEXTS[cl_lang]['client_notif_courier_at_a'])
             elif new_status == 'at_b':
@@ -2374,6 +2440,8 @@ async def handle_courier_update_status_api(request):
                 await bot.send_message(client_id, "🎉 Ваш заказ успешно доставлен! Спасибо, что выбрали наш сервис!")
         except Exception:
             pass
+        if push_body:
+            asyncio.create_task(push_notify(await _get_fcm_token(client_id), "DeliveryMD", push_body))
 
         if next_timeout is not None:
             active_afk_tasks[order_id] = asyncio.create_task(
@@ -2635,12 +2703,12 @@ async def process_order_confirm_yes(callback: CallbackQuery, state: FSMContext):
         data.get('route_geometry_json', '[]'))
         
         online_couriers = await conn.fetch(
-            "SELECT user_id, lang FROM users WHERE role = 'courier' AND is_online = TRUE AND is_approved = TRUE"
+            "SELECT user_id, lang, fcm_token FROM users WHERE role = 'courier' AND is_online = TRUE AND is_approved = TRUE"
         )
-        
+
     await callback.message.edit_text(TEXTS[lang]['order_placed'])
     await state.clear()
-    
+
     c_type_str = "📦 Стандарт" if data['cargo_type'] == 'standard' else "🚚 Грузовой"
     for courier in online_couriers:
         c_lang = courier['lang']
@@ -2652,7 +2720,7 @@ async def process_order_confirm_yes(callback: CallbackQuery, state: FSMContext):
         )
         kb_take = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
-                text=TEXTS[c_lang]['take_btn'].format(price=f"{data['price']:.2f}"), 
+                text=TEXTS[c_lang]['take_btn'].format(price=f"{data['price']:.2f}"),
                 callback_data=f"order_take_{order_id}"
             )]
         ])
@@ -2660,7 +2728,10 @@ async def process_order_confirm_yes(callback: CallbackQuery, state: FSMContext):
             await bot.send_message(courier['user_id'], c_text, reply_markup=kb_take, parse_mode="Markdown")
         except Exception as e:
             logging.error(f"Ошибка отправки заказа курьеру {courier['user_id']}: {e}")
-            
+        asyncio.create_task(push_notify(
+            courier['fcm_token'], "DMD Pro Courier", f"Новый заказ #{order_id} · {data['price']:.2f} MDL"
+        ))
+
     await callback.answer()
 
 @router.callback_query(CreateOrder.confirm, F.data == "order_confirm_no")
@@ -2803,6 +2874,9 @@ async def cb_courier_take_order(callback: CallbackQuery):
     try:
         await bot.send_message(order['client_id'], f"🤝 Ваш заказ #{order_id} принят курьером!")
     except Exception: pass
+    asyncio.create_task(push_notify(
+        await _get_fcm_token(order['client_id']), "DeliveryMD", f"Заказ #{order_id} принят курьером"
+    ))
 
     if order_id in active_afk_tasks: active_afk_tasks[order_id].cancel()
     active_afk_tasks[order_id] = asyncio.create_task(start_afk_inactivity_timer(order_id, 'accepted', 600, order['client_id'], callback.from_user.id))
@@ -2820,10 +2894,13 @@ async def cb_courier_at_point_a(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=TEXTS[lang]['at_b_btn'], callback_data=f"order_atb_{order_id}")]])
     await callback.message.edit_reply_markup(reply_markup=kb)
     
+    cl_lang = await get_lang(order['client_id'])
     try:
-        cl_lang = await get_lang(order['client_id'])
         await bot.send_message(order['client_id'], TEXTS[cl_lang]['client_notif_courier_at_a'])
     except Exception: pass
+    asyncio.create_task(push_notify(
+        await _get_fcm_token(order['client_id']), "DeliveryMD", TEXTS[cl_lang]['client_notif_courier_at_a']
+    ))
 
     if order_id in active_afk_tasks: active_afk_tasks[order_id].cancel()
     task = asyncio.create_task(start_afk_inactivity_timer(order_id, 'at_a', 2400, order['client_id'], callback.from_user.id))
@@ -2842,28 +2919,34 @@ async def cb_courier_at_point_b(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=TEXTS[lang]['done_btn'], callback_data=f"order_done_{order_id}")]])
     await callback.message.edit_reply_markup(reply_markup=kb)
     
+    cl_lang = await get_lang(order['client_id'])
     try:
-        cl_lang = await get_lang(order['client_id'])
         await bot.send_message(order['client_id'], TEXTS[cl_lang]['client_notif_courier_at_b'])
     except Exception: pass
-    
+    asyncio.create_task(push_notify(
+        await _get_fcm_token(order['client_id']), "DeliveryMD", TEXTS[cl_lang]['client_notif_courier_at_b']
+    ))
+
     if order_id in active_afk_tasks: active_afk_tasks[order_id].cancel()
     await callback.answer()
 
 @router.callback_query(F.data.startswith("order_done_"))
 async def cb_courier_complete_order(callback: CallbackQuery):
     order_id = int(callback.data.split("_")[2])
-    
+
     async with db_pool.acquire() as conn:
         await conn.execute("UPDATE orders SET status = 'completed' WHERE id = $1", order_id)
         order = await conn.fetchrow("SELECT client_id, price FROM orders WHERE id = $1", order_id)
-        
+
     await callback.message.edit_text(f"💵 **Заказ #{order_id} успешно завершен!** Сумма `{float(order['price']):.2f} MDL` добавлена в вашу статистику.", parse_mode="Markdown")
-    
+
     try:
         await bot.send_message(order['client_id'], "🎉 Ваш заказ успешно доставлен! Спасибо, что выбрали наш сервис!")
     except Exception: pass
-    
+    asyncio.create_task(push_notify(
+        await _get_fcm_token(order['client_id']), "DeliveryMD", "Заказ доставлен — спасибо, что выбрали нас!"
+    ))
+
     if order_id in active_afk_tasks:
         active_afk_tasks[order_id].cancel()
         active_afk_tasks.pop(order_id, None)
@@ -2942,6 +3025,7 @@ async def main():
     app.router.add_get("/admin/upload", handle_admin_panel)
     app.router.add_post("/admin/upload", handle_admin_upload)
     app.router.add_post("/api/verify", handle_verify_api)  # Метод проверки 6-значного кода
+    app.router.add_post("/api/push-token", handle_push_token_api)
     app.router.add_post("/api/delete-account/{profileId}", handle_delete_account_api) # Метод удаления профиля
     app.router.add_post("/api/quote", handle_quote_api)
     app.router.add_post("/api/orders", handle_create_order_api)

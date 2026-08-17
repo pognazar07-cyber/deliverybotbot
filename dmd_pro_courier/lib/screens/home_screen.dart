@@ -2,6 +2,7 @@ import 'package:dmd_design/dmd_design.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/strings.dart';
+import '../services/api_service.dart';
 import 'history/history_screen.dart';
 import 'profile/profile_screen.dart';
 import 'shift/shift_tab.dart';
@@ -18,12 +19,24 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _api = ApiService();
   int _index = 0;
 
   @override
   void initState() {
     super.initState();
     DmdNotifications.requestPermission();
+    _registerPushToken();
+  }
+
+  Future<void> _registerPushToken() async {
+    DmdPushNotifications.onTokenRefresh((token) {
+      _api.registerPushToken(courierId: widget.telegramId, token: token);
+    });
+    final token = await DmdPushNotifications.getToken();
+    if (token != null) {
+      await _api.registerPushToken(courierId: widget.telegramId, token: token);
+    }
   }
 
   @override

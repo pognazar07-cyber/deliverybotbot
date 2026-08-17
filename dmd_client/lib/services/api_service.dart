@@ -213,6 +213,19 @@ class ApiService {
     return list.map((e) => SupportTicket.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  /// POST /api/push-token — registers/refreshes this device's FCM token so
+  /// the backend can push order-status updates even while the app is closed.
+  Future<void> registerPushToken({required int clientId, required String token}) async {
+    final resp = await _client
+        .post(
+          _uri('/api/push-token'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'telegram_id': clientId, 'token': token, 'role': 'client'}),
+        )
+        .timeout(const Duration(seconds: 15));
+    _decode(resp);
+  }
+
   /// GET /api/app-update
   Future<DmdAppUpdateInfo> checkForUpdate(String lang) async {
     final resp = await _client.get(_uri('/api/app-update')).timeout(const Duration(seconds: 15));

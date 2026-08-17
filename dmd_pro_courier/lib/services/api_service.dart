@@ -206,6 +206,19 @@ class ApiService {
     );
   }
 
+  /// POST /api/push-token — registers/refreshes this device's FCM token so
+  /// the backend can push new-order/status alerts even while the app is closed.
+  Future<void> registerPushToken({required int courierId, required String token}) async {
+    final resp = await _client
+        .post(
+          _uri('/api/push-token'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'telegram_id': courierId, 'token': token, 'role': 'courier'}),
+        )
+        .timeout(const Duration(seconds: 15));
+    _decode(resp);
+  }
+
   /// GET /api/app-update
   Future<DmdAppUpdateInfo> checkForUpdate(String lang) async {
     final resp = await _client.get(_uri('/api/app-update')).timeout(const Duration(seconds: 15));

@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 
 import 'screens/splash_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   DmdNotifications.init();
+  await DmdPushNotifications.init();
+  DmdPushNotifications.listenForegroundMessages();
   runApp(const DmdProCourierApp());
 }
 

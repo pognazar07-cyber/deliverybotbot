@@ -2,7 +2,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Local (device-only) notifications shared by both apps — not push, so
 /// they only fire while the app is running and polling (foreground or
-/// recently backgrounded). Real push would need a Firebase project.
+/// recently backgrounded). See [DmdPushNotifications] for the Firebase-backed
+/// path that also works when the app is closed.
 class DmdNotifications {
   DmdNotifications._();
 

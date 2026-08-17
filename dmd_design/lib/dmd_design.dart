@@ -5,6 +5,7 @@ library;
 
 export 'src/colors.dart';
 export 'src/notifications.dart';
+export 'src/push_notifications.dart';
 export 'src/spacing.dart';
 export 'src/theme.dart';
 export 'src/update_info.dart';
