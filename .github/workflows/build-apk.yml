@@ -20,6 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Written from a repo secret rather than committed (see dmd_client/dmd_pro_courier .gitignore).
       - name: Write Firebase google-services.json
         working-directory: ${{ matrix.app }}
         run: printf '%s' '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
